@@ -12,7 +12,6 @@
   - [XIAO RP2350 Telemetry Research](guides/xiao_rp2350_telemetry_research.md)
   - [XIAO RP2350 Reset Behavior](guides/xiao_rp2350_reset_behavior.md)
   - [RP2350 Peripherals & Register Analysis Guide](guides/Peripherals_Guide.md)
-- [🛡️ Repository Rules](#-repository-rules)
 
 # NanoPD 2.0
 
@@ -69,7 +68,3 @@ Detailed research and interpretation manuals for NanoPD 2.0 components:
 *   **[RP2350 Peripherals & Register Analysis Guide](guides/Peripherals_Guide.md)**: Learn how we extract official SVD definitions for live bit-level hardware reads.
 
 ---
-
-## 🛡️ Repository Rules
-
-Please note that as defined in `.cursorrules`, certain items (like `.venv/`, `mcu/` code, and `firmware/` binaries) are strictly restricted from being pushed to the remote repository to maintain a clean specialized project scope.
