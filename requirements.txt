@@ -1,0 +1,8 @@
+streamlit
+watchdog
+platformdirs
+pandas
+st-theme
+mpremote
+pyserial
+plotly

@@ -1,0 +1,83 @@
+/* NanoPD 2.0 ABSOLUTE FINAL CSS - NO SCROLL, NO GAPS */
+
+/* 1. Global Viewport Lock (Fix C) */
+html, body, .stApp, 
+[data-testid="stAppViewContainer"], 
+[data-testid="stAppViewBlockContainer"],
+.main, .stMain {
+    height: 100vh !important;
+    width: 100vw !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    position: fixed !important;
+}
+
+/* 2. Main Content Area Reset (Fix A - Eliminates the 421px gap) */
+.main .block-container {
+    max-width: 100% !important;
+    width: 100% !important;
+    padding-top: 1.5rem !important;
+    padding-bottom: 0 !important;
+    /* Reduce side paddings to absolute minimum to close the gap */
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+}
+
+/* Ensure the vertical block inside main fills the space */
+.main .block-container > div {
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+/* 3. Dashboard Card Stretching & Scrolling (Fix B) */
+[data-testid="stVerticalBlockBorderWrapper"] {
+    /* Precise calculation to avoid browser scroll: Viewport - Top elements */
+    height: calc(100vh - 270px) !important; 
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    background-color: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+    margin-bottom: 0 !important;
+}
+
+/* Enable internal scrolling for the content inside the border wrapper */
+[data-testid="stVerticalBlockBorderWrapper"] > div {
+    max-height: 100% !important;
+}
+
+/* Custom Scrollbar for Cards */
+[data-testid="stVerticalBlockBorderWrapper"]::-webkit-scrollbar {
+    width: 8px;
+}
+[data-testid="stVerticalBlockBorderWrapper"]::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+}
+
+/* Sidebar & Headers Cleanup */
+header {
+    background-color: transparent !important;
+    z-index: 999;
+}
+
+section[data-testid="stSidebar"] {
+    background-color: #f8fafc !important;
+    border-right: 1px solid #e2e8f0 !important;
+}
+
+/* Generic Label Styling */
+.metric-label {
+    color: #64748b;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+footer { display: none !important; }

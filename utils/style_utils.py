@@ -1,0 +1,169 @@
+import streamlit as st
+from utils.mount_utils import is_mounted, is_rp2350_connected
+
+def get_global_styles(
+    title_size="1.5rem",
+    label_size="0.875rem",
+    info_size="1.0rem",
+    code_font="Consolas, Monaco, monospace", 
+    code_size="14px", 
+    code_lh="1.3"
+):
+    """Returns the raw CSS contents with dynamic styling (Main Panel Only)."""
+    return f"""
+    /* 1. Viewport Locking */
+    html, body, .stApp, [data-testid="stAppViewContainer"] {{
+        height: 100vh !important;
+        width: 100vw !important;
+        overflow: hidden !important;
+        position: fixed !important;
+    }}
+
+    /* 2. Absolute Header */
+    header[data-testid="stHeader"] {{
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        height: 48px !important;
+        background: transparent !important;
+        z-index: 999999 !important;
+    }}
+
+    /* 3. Main Content Container (Stable v716 Logic) */
+    [data-testid="stAppViewBlockContainer"], 
+    .block-container {{
+        max-width: calc(100vw - 360px) !important; 
+        margin-left: 0 !important;
+        margin-top: 0 !important; 
+        padding-top: 1.5rem !important; 
+        padding-bottom: 20px !important;
+        padding-left: 1rem !important;
+        padding-right: 3rem !important;
+        height: 100vh !important;
+        overflow: hidden !important;
+    }}
+
+    /* 4. Title (Subheader) Scaling - Targets st.subheader (Title 1/2) */
+    [data-testid="stAppViewBlockContainer"] h3,
+    [data-testid="stAppViewBlockContainer"] .stSubheader h3,
+    h3 {{
+        font-size: {title_size} !important;
+        margin-top: 0.5rem !important;
+        margin-bottom: 0.5rem !important;
+    }}
+
+    /* 5. Metric Label Styling */
+    .metric-label,
+    .metric-label * {{
+        color: #64748b !important;
+        font-size: {label_size} !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
+    }}
+    
+    /* 6. Info Box (Alert) Scaling */
+    .stAlert,
+    .stAlert * {{
+        font-size: {info_size} !important;
+    }}
+
+    /* 7. Code & Text Area Styling (Monospace) */
+    [data-testid="stCode"] code, 
+    [data-testid="stCode"] pre,
+    [data-testid="stTextArea"] textarea,
+    [data-testid="stTextArea"] textarea *,
+    pre code {{
+        font-family: {code_font} !important;
+        font-size: {code_size} !important;
+        line-height: {code_lh} !important;
+    }}
+
+    footer {{ display: none !important; }}
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {{
+        width: 8px;
+        height: 8px;
+    }}
+    ::-webkit-scrollbar-track {{
+        background: transparent;
+    }}
+    ::-webkit-scrollbar-thumb {{
+        background: #e2e8f0;
+        border-radius: 10px;
+    }}
+    ::-webkit-scrollbar-thumb:hover {{
+        background: #cbd5e1;
+    }}
+    """
+
+def apply_global_css(
+    title_size="1.5rem",
+    label_size="0.875rem",
+    info_size="1.0rem",
+    code_font="Consolas, Monaco, monospace", 
+    code_size="14px", 
+    code_lh="1.3",
+    is_mcu_page=False
+):
+    """Injects the global CSS with Google Font support and dynamic parameters."""
+    
+    # Render Global Mounting Status in Sidebar (Only for MCU-related pages)
+    if is_mcu_page:
+        with st.sidebar:
+            if is_mounted():
+                st.markdown("""
+                    <div style='background:#fef2f2; border:1px solid #fee2e2; color:#991b1b; padding:12px; border-radius:8px; margin-bottom:1rem; font-size:0.85em;'>
+                        <div style='font-weight:700; display:flex; align-items:center; gap:6px;'>
+                            🔒 SERIAL PORT BUSY
+                        </div>
+                        <div style='margin-top:4px; color:#b91c1c; line-height:1.3;'>
+                            Device is currently mounted. Hardware operations are locked.
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+            elif not is_rp2350_connected():
+                st.markdown("""
+                    <div style='background:#f8fafc; border:1px solid #e2e8f0; color:#475569; padding:12px; border-radius:8px; margin-bottom:1rem; font-size:0.85em;'>
+                        <div style='font-weight:700; display:flex; align-items:center; gap:6px;'>
+                            🔌 USB DISCONNECTED
+                        </div>
+                        <div style='margin-top:4px; color:#64748b; line-height:1.3;'>
+                            No RP2xxx device detected. Please connect the device.
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                    <div style='background:#f0fdf4; border:1px solid #dcfce7; color:#166534; padding:12px; border-radius:8px; margin-bottom:1rem; font-size:0.85em;'>
+                        <div style='font-weight:700; display:flex; align-items:center; gap:6px;'>
+                            ✅ SERIAL PORT READY
+                        </div>
+                        <div style='margin-top:4px; color:#15803d; line-height:1.3;'>
+                            Device is unmounted. Hardware operations are available.
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+    raw_styles = get_global_styles(
+        title_size=title_size, 
+        label_size=label_size, 
+        info_size=info_size, 
+        code_font=code_font, 
+        code_size=code_size, 
+        code_lh=code_lh
+    )
+    
+    # Minify to prevent markdown code-block detection
+    minified_css = "".join([line.strip() for line in raw_styles.splitlines() if line.strip()])
+    
+    # Combined injection with Google Font
+    combined_html = (
+        f'<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">'
+        f'<style>{minified_css}</style>'
+    )
+    
+    # Using st.markdown
+    st.markdown(combined_html, unsafe_allow_html=True)
