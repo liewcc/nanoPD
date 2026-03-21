@@ -2,6 +2,18 @@
   <img src="img/logo.png" alt="nanoPD Logo" width="200">
 </p>
 
+## 📍 Table of Contents
+
+- [🚀 Quick Start](#-quick-start-windows)
+- [✨ Features](#-features)
+- [📂 Project Structure](#-project-structure)
+- [📖 Documentation & Guides](#-documentation--guides)
+  - [SRAM Monitor Interpretation Guide](guides/SRAM_Monitor_Guide.md)
+  - [XIAO RP2350 Telemetry Research](guides/xiao_rp2350_telemetry_research.md)
+  - [XIAO RP2350 Reset Behavior](guides/xiao_rp2350_reset_behavior.md)
+  - [RP2350 Peripherals & Register Analysis Guide](guides/Peripherals_Guide.md)
+- [🛡️ Repository Rules](#-repository-rules)
+
 # NanoPD 2.0
 
 **NanoPD 2.0** is an advanced debugging dashboard and control system designed specifically for the **Seeed Studio XIAO RP2350**. It provides a premium, Streamlit-based interface for microcontroller file management, real-time memory monitoring, peripheral bit-level analysis, and low-level hardware interaction.
