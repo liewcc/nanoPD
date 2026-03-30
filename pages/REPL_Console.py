@@ -240,8 +240,7 @@ if st.session_state.is_running:
         st.session_state.is_running = False
         st.rerun()
 
-    timestamp = time.strftime("%H:%M:%S")
-    st.session_state.repl_output += f"[{timestamp}] >> Run\n"
+    st.session_state.repl_output += ">> Run\n"
     output_placeholder.code(st.session_state.repl_output, language="text", height=785)
 
     cmd = [sys.executable, "-m", "mpremote", "exec", code_to_run]
@@ -251,6 +250,7 @@ if st.session_state.is_running:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
             bufsize=1,
             creationflags=CREATIONFLAGS
         )
@@ -282,7 +282,9 @@ if st.session_state.is_running:
                     break
             
             if updated:
-                output_placeholder.code(st.session_state.repl_output, language="text", height=785)
+                # Keep only the last 42 lines for display during the loop to simulate an auto-rolling terminal
+                display_lines = st.session_state.repl_output.splitlines()[-42:]
+                output_placeholder.code("\n".join(display_lines), language="text", height=785)
 
             if proc.poll() is not None:
                 t_out.join(timeout=0.1)
@@ -296,7 +298,7 @@ if st.session_state.is_running:
                 break
 
             if (time.time() - start_time) > timeout_val:
-                st.session_state.repl_output += f"\n[TIMEOUT] Connection closed after {timeout_val}s (Script may still be running on MCU)\n"
+                st.session_state.repl_output += f"\n>> [TIMEOUT] Connection closed after {timeout_val}s (Script may still be running on MCU)\n"
                 proc.terminate()
                 break
 
