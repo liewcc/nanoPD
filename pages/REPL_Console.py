@@ -14,8 +14,9 @@ from utils.mount_utils import is_mounted, is_rp2350_connected, CREATIONFLAGS
 if "ui_cfg" not in st.session_state:
     st.session_state.ui_cfg = load_ui_config()
 
-if "repl_code" not in st.session_state:
-    st.session_state.repl_code = "# Write your MicroPython code here\nprint('Hello from NanoPD!')\n"
+# Source of truth for the editor content
+if "repl_code_editor" not in st.session_state:
+    st.session_state.repl_code_editor = "# Write your MicroPython code here\nprint('Hello from NanoPD!')\n"
 
 if "repl_output" not in st.session_state:
     st.session_state.repl_output = ""
@@ -23,9 +24,12 @@ if "repl_output" not in st.session_state:
 if "repl_running" not in st.session_state:
     st.session_state.repl_running = False
 
+if "repl_timeout" not in st.session_state:
+    st.session_state.repl_timeout = 30.0
+
 
 # ─── Helper Functions ───────────────────────────────────────────────────────
-def run_mpremote(args, timeout=20.0, soft_reset=False):
+def run_mpremote(args, timeout=30.0, soft_reset=False):
     """Executes mpremote with a retry loop for Raw REPL entry."""
     if soft_reset:
         subprocess.run(
@@ -52,30 +56,42 @@ def run_mpremote(args, timeout=20.0, soft_reset=False):
                 continue
 
             return res.returncode, stdout, stderr
-        except subprocess.TimeoutExpired:
-            return -1, "", "Timeout: MCU did not respond."
+        except subprocess.TimeoutExpired as e:
+            # Handle timeout by capturing partial output
+            stdout = e.stdout.decode('utf-8', errors='replace') if e.stdout else ""
+            stderr = e.stderr.decode('utf-8', errors='replace') if e.stderr else ""
+            return -1, stdout, stderr
         except Exception as e:
             return -2, "", str(e)
 
     return -3, "", "Failed to enter Raw REPL after retries."
 
 
-def execute_code(code: str):
+def execute_code(code: str, timeout: float):
     """Send code to the MCU via mpremote exec and return formatted output."""
     timestamp = time.strftime("%H:%M:%S")
-    header = f"[{timestamp}] >>> Run\n"
+    # >> prefix for host commands
+    header = f"[{timestamp}] >> Run\n"
 
-    rc, stdout, stderr = run_mpremote(["exec", code], timeout=30.0)
+    rc, stdout, stderr = run_mpremote(["exec", code], timeout=timeout)
 
     output_parts = [header]
+    
+    # << prefix for MCU output lines
     if stdout.strip():
-        output_parts.append(stdout.rstrip("\n"))
+        for line in stdout.splitlines():
+            output_parts.append(f"<< {line}")
+            
     if stderr.strip():
-        output_parts.append(f"[stderr] {stderr.rstrip()}")
-    if rc != 0 and not stderr.strip():
+        for line in stderr.splitlines():
+            output_parts.append(f"[stderr] {line}")
+            
+    if rc == -1:
+        output_parts.append(f"\n[TIMEOUT] Connection closed after {timeout}s (Script may still be running on MCU)")
+    elif rc != 0 and not stderr.strip():
         output_parts.append(f"[error] Exit code: {rc}")
-    if rc == 0 and not stdout.strip() and not stderr.strip():
-        output_parts.append("(no output)")
+    elif rc == 0 and not stdout.strip() and not stderr.strip():
+        output_parts.append("<< (no output)")
 
     return "\n".join(output_parts) + "\n"
 
@@ -85,6 +101,8 @@ def load_file_dialog():
     root = tk.Tk()
     root.withdraw()
     root.attributes('-topmost', True)
+    root.lift()
+    root.focus_force()
     selected_file = filedialog.askopenfilename(
         title="Select MicroPython File",
         filetypes=[("Python Files", "*.py"), ("All Files", "*.*")]
@@ -98,6 +116,8 @@ def save_file_dialog(content: str):
     root = tk.Tk()
     root.withdraw()
     root.attributes('-topmost', True)
+    root.lift()
+    root.focus_force()
     selected_file = filedialog.asksaveasfilename(
         title="Save MicroPython File",
         defaultextension=".py",
@@ -112,6 +132,41 @@ def save_file_dialog(content: str):
         except Exception:
             return None
     return None
+
+
+# ─── Callbacks (Handle state BEFORE UI rendering) ─────────────
+def handle_run():
+    code = st.session_state.repl_code_editor.strip()
+    timeout = st.session_state.repl_timeout
+    if code:
+        result = execute_code(code, timeout)
+        st.session_state.repl_output += result
+    else:
+        st.toast("No code to run.", icon="⚠️")
+
+def handle_save():
+    content = st.session_state.repl_code_editor
+    saved_path = save_file_dialog(content)
+    if saved_path:
+        st.toast(f"Saved to {os.path.basename(saved_path)}", icon="✅")
+    else:
+        st.toast("Save cancelled.", icon="ℹ️")
+
+def handle_load():
+    file_path = load_file_dialog()
+    if file_path:
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+                st.session_state.repl_code_editor = content
+            st.toast(f"Loaded {os.path.basename(file_path)}", icon="✅")
+        except Exception as e:
+            st.toast(f"Failed to load: {e}", icon="❌")
+    else:
+        st.toast("Load cancelled.", icon="ℹ️")
+
+def handle_clear():
+    st.session_state.repl_output = ""
 
 
 # ─── Apply Global CSS ───────────────────────────────────────────────────────
@@ -167,34 +222,42 @@ with col_code:
     with st.container(border=True):
         ab1, ab2, ab3, ab4 = st.columns(4)
         with ab1:
-            run_clicked = st.button(
+            st.button(
                 "🚀 Run Code", width="stretch",
                 disabled=not device_ready,
-                help=None if device_ready else "Device not ready"
+                help=None if device_ready else "Device not ready",
+                on_click=handle_run
             )
         with ab2:
-            save_clicked = st.button("💾 Save to Local", width="stretch")
+            st.button("💾 Save to Local", width="stretch", on_click=handle_save)
         with ab3:
-            load_clicked = st.button("📂 Load Local File", width="stretch")
+            st.button("📂 Load Local File", width="stretch", on_click=handle_load)
         with ab4:
-            clear_clicked = st.button("🗑️ Clear Output", width="stretch")
+            st.button("🗑️ Clear Output", width="stretch", on_click=handle_clear)
+        
+        # Timeout Configuration
+        st.number_input(
+            "Timeout (seconds)",
+            min_value=1.0,
+            max_value=3600.0,
+            step=1.0,
+            key="repl_timeout",
+            help="Maximum time to wait for a script to finish before timing out host-side."
+        )
 
     # Coding container
-    with st.container(height=764, border=True):
+    with st.container(height=714, border=True):
         st.markdown(
             '<p class="metric-label" style="margin:0 0 12px 0">CODING</p>',
             unsafe_allow_html=True
         )
 
-        new_code = st.text_area(
+        st.text_area(
             "Code Editor",
-            value=st.session_state.repl_code,
-            height=700,
+            height=650,
             label_visibility="collapsed",
             key="repl_code_editor"
         )
-        # Sync editor content back to session state
-        st.session_state.repl_code = new_code
 
 with col_output:
     with st.container(height=852, border=True):
@@ -208,38 +271,3 @@ with col_output:
             language="text",
             height=785
         )
-
-
-# ─── Button Actions (processed after layout rendering) ─────────────────────
-if run_clicked:
-    code_to_run = st.session_state.repl_code.strip()
-    if code_to_run:
-        result = execute_code(code_to_run)
-        st.session_state.repl_output += result
-        st.rerun()
-    else:
-        st.toast("No code to run.", icon="⚠️")
-
-if save_clicked:
-    saved_path = save_file_dialog(st.session_state.repl_code)
-    if saved_path:
-        st.toast(f"Saved to {os.path.basename(saved_path)}", icon="✅")
-    else:
-        st.toast("Save cancelled.", icon="ℹ️")
-
-if load_clicked:
-    file_path = load_file_dialog()
-    if file_path:
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                st.session_state.repl_code = f.read()
-            st.toast(f"Loaded {os.path.basename(file_path)}", icon="✅")
-            st.rerun()
-        except Exception as e:
-            st.toast(f"Failed to load: {e}", icon="❌")
-    else:
-        st.toast("Load cancelled.", icon="ℹ️")
-
-if clear_clicked:
-    st.session_state.repl_output = ""
-    st.rerun()
