@@ -209,7 +209,7 @@ with col_code:
             '<p class="metric-label" style="margin:0 0 12px 0">CODING</p>',
             unsafe_allow_html=True
         )
-        edited_code = st_ace(
+        ace_content = st_ace(
             value=st.session_state.repl_code,
             language="python",
             theme="tomorrow",
@@ -217,14 +217,13 @@ with col_code:
             show_print_margin=False,
             wrap=True,
             auto_update=True,
-            min_lines=28,
-            max_lines=28,
+            height=600,
             font_size=14,
             key="repl_code_editor"
         )
-        # st_ace returns the edited code as its return value
-        if edited_code is not None and edited_code != st.session_state.repl_code:
-            st.session_state.repl_code = edited_code
+        # Sync ace editor content back to persistent state
+        if ace_content is not None and ace_content != st.session_state.repl_code:
+            st.session_state.repl_code = ace_content
 
 with col_output:
     with st.container(height=852, border=True):
