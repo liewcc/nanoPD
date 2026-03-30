@@ -309,3 +309,29 @@ if st.session_state.is_running:
 
     st.session_state.is_running = False
     st.rerun()
+
+# ─── AUTO-SCROLL POST-EXECUTION ─────────────────────────────────────────────
+if not st.session_state.is_running and st.session_state.repl_output:
+    import streamlit.components.v1 as components
+    components.html(
+        """
+        <script>
+        function scrollToBottom() {
+            var codes = window.parent.document.querySelectorAll('pre code');
+            if (codes.length > 0) {
+                var codeContainer = codes[codes.length - 1].parentNode.parentNode;
+                if (codeContainer) {
+                    codeContainer.scrollTop = codeContainer.scrollHeight;
+                }
+            }
+        }
+        scrollToBottom();
+        window.addEventListener('load', scrollToBottom);
+        setTimeout(scrollToBottom, 100);
+        setTimeout(scrollToBottom, 500);
+        </script>
+        """,
+        height=0,
+        width=0
+    )
+
