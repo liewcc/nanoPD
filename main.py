@@ -31,6 +31,7 @@ pages = {
     ],
     "MCU": [
         st.Page("pages/Filesystem.py", title="Filesystem", icon="📁"),
+        st.Page("pages/REPL_Console.py", title="REPL Console", icon="🖥️"),
         st.Page("pages/Peripherals.py", title="Peripherals", icon="🧩"),
         st.Page("pages/SRAM.py", title="SRAM", icon="💾"),
         st.Page("pages/BootROM.py", title="BootROM", icon="🔒"),

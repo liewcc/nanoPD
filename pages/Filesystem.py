@@ -472,11 +472,17 @@ with col_left:
                     save_config(config)
                     st.rerun()
 
-        if st.button("📂 View Local Folder", width="stretch"):
-            try:
-                os.startfile(st.session_state["xip_local_path"])
-            except Exception as e:
-                st.error(f"Failed to open folder: {e}")
+        btn_col1, btn_col2 = st.columns([1, 1])
+        with btn_col1:
+            if st.button("📂 View Local Folder", width="stretch"):
+                try:
+                    os.startfile(st.session_state["xip_local_path"])
+                except Exception as e:
+                    st.error(f"Failed to open folder: {e}")
+        with btn_col2:
+            if st.button("🔄 Refresh Drives", width="stretch"):
+                st.session_state.pop("xip_capacity", None)
+                st.rerun()
         
         
         mounted = is_mounted()
