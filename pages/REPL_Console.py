@@ -170,6 +170,14 @@ with col_code:
         
         # Timeout Configuration Columns
         st.markdown('<p class="metric-label" style="margin:8px 0 0 0">TIMEOUT (SECONDS)</p>', unsafe_allow_html=True)
+        
+        # Synchronization logic
+        def sync_from_num():
+            st.session_state.repl_timeout = st.session_state.timeout_num
+        
+        def sync_from_slider():
+            st.session_state.repl_timeout = st.session_state.timeout_slider
+
         t_col1, t_col2 = st.columns([1, 1.8])
         with t_col1:
             # Side-by-side Number Input
@@ -177,7 +185,9 @@ with col_code:
                 "Timeout Number",
                 min_value=1, max_value=3600, step=1,
                 label_visibility="collapsed",
-                key="repl_timeout"
+                key="timeout_num",
+                value=st.session_state.get("repl_timeout", 30),
+                on_change=sync_from_num
             )
         with t_col2:
             # Side-by-side Slider
@@ -185,7 +195,9 @@ with col_code:
                 "Timeout Slider",
                 min_value=1, max_value=600, step=1,
                 label_visibility="collapsed",
-                key="repl_timeout" # Shared key for dual-binding
+                key="timeout_slider",
+                value=st.session_state.get("repl_timeout", 30),
+                on_change=sync_from_slider
             )
 
     # Coding container
