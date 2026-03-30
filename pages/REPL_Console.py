@@ -133,15 +133,20 @@ code_lh = st.session_state.ui_cfg.get("code_lh", "1.3")
 
 st.markdown(f"""
     <style>
-        /* Coding Container (Left Column, 2nd Container) - Dynamically scales to monitor */
-        div[data-testid="column"]:nth-of-type(1) [data-testid="stVerticalBlockBorderWrapper"]:nth-of-type(2) {{
-            height: calc(100vh - 345px) !important;
+        /* ── Left Column: Buttons+Timeout container ── reset height to auto */
+        [data-testid="column"]:nth-of-type(1) .element-container:nth-child(1) [data-testid="stVerticalBlockBorderWrapper"] {{
+            height: auto !important;
+        }}
+
+        /* ── Left Column: CODING container (2nd element-container) ── */
+        [data-testid="column"]:nth-of-type(1) .element-container:nth-child(2) [data-testid="stVerticalBlockBorderWrapper"] {{
+            height: calc(100vh - 290px) !important;
             overflow-y: auto !important;
         }}
 
-        /* MCU Output Container (Right Column, 1st Container) - Dynamically scales to monitor */
-        div[data-testid="column"]:nth-of-type(2) [data-testid="stVerticalBlockBorderWrapper"]:nth-of-type(1) {{
-            height: calc(100vh - 180px) !important;
+        /* ── Right Column: MCU OUTPUT ── */
+        [data-testid="column"]:nth-of-type(2) [data-testid="stVerticalBlockBorderWrapper"] {{
+            height: calc(100vh - 125px) !important;
             overflow-y: hidden !important;
         }}
 
