@@ -14,12 +14,12 @@ from utils.mount_utils import is_mounted, is_rp2350_connected, CREATIONFLAGS
 if "ui_cfg" not in st.session_state:
     st.session_state.ui_cfg = load_ui_config()
 
-# Persistent storage for page navigation (Streamlit clears widget keys on page exit)
-if "repl_code_storage" not in st.session_state:
-    st.session_state.repl_code_storage = "# Write your MicroPython code here\nprint('Hello from NanoPD!')\n"
+# Persistent storage for code and output (survives page switching)
+if "repl_code" not in st.session_state:
+    st.session_state.repl_code = "# Write your MicroPython code here\nprint('Hello from NanoPD!')\n"
 
-if "repl_output_storage" not in st.session_state:
-    st.session_state.repl_output_storage = ""
+if "repl_output" not in st.session_state:
+    st.session_state.repl_output = ""
 
 if "repl_timeout" not in st.session_state:
     st.session_state.repl_timeout = 30
@@ -67,13 +67,10 @@ def save_file_dialog(content: str):
     return None
 
 
-# ─── Callbacks (Handle state & blocking IO) ─────────────
-def sync_code_storage():
-    """Sync the widget state back to persistent storage."""
-    st.session_state.repl_code_storage = st.session_state.repl_code_editor
-
+# ─── Callbacks ──────────────────────────────────────────────────────────────
 def handle_save():
-    content = st.session_state.repl_code_storage
+    # Read the latest content from the widget key before it disappears
+    content = st.session_state.get("repl_code_editor", st.session_state.repl_code)
     saved_path = save_file_dialog(content)
     if saved_path:
         st.toast(f"Saved to {os.path.basename(saved_path)}", icon="✅")
@@ -85,7 +82,10 @@ def handle_load():
     if file_path:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                st.session_state.repl_code_storage = f.read()
+                loaded = f.read()
+            # Write to the persistent state AND the widget key
+            st.session_state.repl_code = loaded
+            st.session_state.repl_code_editor = loaded
             st.toast(f"Loaded {os.path.basename(file_path)}", icon="✅")
         except Exception as e:
             st.toast(f"Failed to load: {e}", icon="❌")
@@ -93,11 +93,20 @@ def handle_load():
         st.toast("Load cancelled.", icon="ℹ️")
 
 def handle_clear():
-    st.session_state.repl_output_storage = ""
+    st.session_state.repl_output = ""
 
 def handle_run_toggle():
-    # Toggle state - script body handles the actual process management
     st.session_state.is_running = not st.session_state.is_running
+
+def sync_code_to_state():
+    """Syncs the widget key back to the persistent state on every edit."""
+    st.session_state.repl_code = st.session_state.repl_code_editor
+
+def sync_from_num():
+    st.session_state.repl_timeout = st.session_state.timeout_num
+
+def sync_from_slider():
+    st.session_state.repl_timeout = st.session_state.timeout_slider
 
 
 # ─── Apply Global CSS ───────────────────────────────────────────────────────
@@ -111,14 +120,12 @@ apply_global_css(
     is_mcu_page=True
 )
 
-# Page-specific CSS overrides
 code_font = st.session_state.ui_cfg.get("code_font", "Consolas, Monaco, monospace")
 code_size = st.session_state.ui_cfg.get("code_size", "14px")
 code_lh = st.session_state.ui_cfg.get("code_lh", "1.3")
 
 st.markdown(f"""
     <style>
-        /* Reduce Streamlit's large default bottom padding on the main content area */
         section[data-testid="stMain"] > div {{
             padding-bottom: 20px !important;
         }}
@@ -128,8 +135,6 @@ st.markdown(f"""
         div[data-testid="block-container"] {{
             padding-bottom: 20px !important;
         }}
-
-        /* Output terminal styling */
         .repl-output-block pre code {{
             font-family: {code_font} !important;
             font-size: {code_size} !important;
@@ -171,144 +176,120 @@ with col_code:
             st.button("📂 Load Local File", width="stretch", on_click=handle_load)
         with ab4:
             st.button("🗑️ Clear Output", width="stretch", on_click=handle_clear)
-        
-        # Timeout Configuration Columns
-        st.markdown('<p class="metric-label" style="margin:8px 0 0 0">TIMEOUT (SECONDS)</p>', unsafe_allow_html=True)
-        
-        # Synchronization logic
-        def sync_from_num():
-            st.session_state.repl_timeout = st.session_state.timeout_num
-        
-        def sync_from_slider():
-            st.session_state.repl_timeout = st.session_state.timeout_slider
 
+        # Timeout Configuration
+        st.markdown('<p class="metric-label" style="margin:8px 0 0 0">TIMEOUT (SECONDS)</p>', unsafe_allow_html=True)
         t_col1, t_col2 = st.columns([1, 1.8])
         with t_col1:
-            # Side-by-side Number Input
             st.number_input(
                 "Timeout Number",
                 min_value=1, max_value=3600, step=1,
                 label_visibility="collapsed",
                 key="timeout_num",
-                value=st.session_state.get("repl_timeout", 30),
+                value=st.session_state.repl_timeout,
                 on_change=sync_from_num
             )
         with t_col2:
-            # Side-by-side Slider
             st.slider(
                 "Timeout Slider",
                 min_value=1, max_value=600, step=1,
                 label_visibility="collapsed",
                 key="timeout_slider",
-                value=st.session_state.get("repl_timeout", 30),
+                value=min(st.session_state.repl_timeout, 600),
                 on_change=sync_from_slider
             )
 
-    # Coding container
-    with st.container(height=714, border=True):
+    # Coding container (B) with border
+    with st.container(height=764, border=True):
         st.markdown(
             '<p class="metric-label" style="margin:0 0 12px 0">CODING</p>',
             unsafe_allow_html=True
         )
         st.text_area(
             "Code Editor",
-            value=st.session_state.repl_code_storage,
-            height=630, # Reduced to ensure container border visibility
+            value=st.session_state.repl_code,
+            height=700,
             label_visibility="collapsed",
             key="repl_code_editor",
-            on_change=sync_code_storage
+            on_change=sync_code_to_state
         )
 
-# ─── NON-BLOCKING EXECUTION ENGINE ───────────────────────────────────────── (In the output column)
 with col_output:
-    output_container = st.container(height=852, border=True)
-    with output_container:
+    with st.container(height=852, border=True):
         st.markdown(
             '<p class="metric-label" style="margin:0 0 12px 0">MCU OUTPUT</p>',
             unsafe_allow_html=True
         )
-        
-        # This area will display the output code block
-        # We use a placeholder that will be updated in a loop if running
         output_placeholder = st.empty()
-
-        # Render the current buffer immediately
         output_placeholder.code(
-            st.session_state.repl_output_storage if st.session_state.repl_output_storage else "(waiting for execution...)",
-            language="text"
+            st.session_state.repl_output if st.session_state.repl_output else "(waiting for execution...)",
+            language="text",
+            height=785
         )
 
-# ─── RUN ENGINE (Executed if is_running was just set to True) ─────────────
+
+# ─── NON-BLOCKING EXECUTION ENGINE ─────────────────────────────────────────
 if st.session_state.is_running:
-    code_to_run = st.session_state.repl_code_editor.strip()
+    code_to_run = st.session_state.repl_code.strip()
     timeout_val = st.session_state.repl_timeout
-    
+
     if not code_to_run:
         st.toast("No code to run.", icon="⚠️")
         st.session_state.is_running = False
         st.rerun()
 
     timestamp = time.strftime("%H:%M:%S")
-    st.session_state.repl_output_storage += f"[{timestamp}] >> Run\n"
-    
-    # Refresh the display with the new header
-    output_placeholder.code(st.session_state.repl_output_storage, language="text")
+    st.session_state.repl_output += f"[{timestamp}] >> Run\n"
+    output_placeholder.code(st.session_state.repl_output, language="text", height=785)
 
-    # Start Popen process
     cmd = [sys.executable, "-m", "mpremote", "exec", code_to_run]
     try:
         proc = subprocess.Popen(
-            cmd, 
-            stdout=subprocess.PIPE, 
-            stderr=subprocess.PIPE, 
-            text=True, 
-            bufsize=1, 
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
             creationflags=CREATIONFLAGS
         )
-        
-        start_time = time.time()
-        
-        # Poll the process
-        while True:
-            # Check if finished
-            if proc.poll() is not None:
-                # Get remaining output
-                remaining_stdout, remaining_stderr = proc.communicate()
-                if remaining_stdout:
-                    for l in remaining_stdout.splitlines():
-                        st.session_state.repl_output_storage += f"<< {l}\n"
-                if remaining_stderr:
-                    for l in remaining_stderr.splitlines():
-                        st.session_state.repl_output_storage += f"[stderr] {l}\n"
-                break
 
-            # Non-blocking read of stdout
-            import selectors
+        start_time = time.time()
+        import selectors
+
+        while True:
             sel = selectors.DefaultSelector()
             sel.register(proc.stdout, selectors.EVENT_READ)
             sel.register(proc.stderr, selectors.EVENT_READ)
-            
+
             events = sel.select(timeout=0.1)
             for key, mask in events:
                 line = key.fileobj.readline()
                 if line:
                     prefix = "<<" if key.fileobj is proc.stdout else "[stderr]"
-                    st.session_state.repl_output_storage += f"{prefix} {line}"
-                    # Update live display
-                    output_placeholder.code(st.session_state.repl_output_storage, language="text")
+                    st.session_state.repl_output += f"{prefix} {line}"
+                    output_placeholder.code(st.session_state.repl_output, language="text", height=785)
 
-            # Check timeout
+            sel.close()
+
+            if proc.poll() is not None:
+                remaining_stdout, remaining_stderr = proc.communicate()
+                if remaining_stdout:
+                    for l in remaining_stdout.splitlines():
+                        st.session_state.repl_output += f"<< {l}\n"
+                if remaining_stderr:
+                    for l in remaining_stderr.splitlines():
+                        st.session_state.repl_output += f"[stderr] {l}\n"
+                break
+
             if (time.time() - start_time) > timeout_val:
-                st.session_state.repl_output_storage += f"\n[TIMEOUT] Connection closed after {timeout_val}s (Script may still be running on MCU)\n"
+                st.session_state.repl_output += f"\n[TIMEOUT] Connection closed after {timeout_val}s (Script may still be running on MCU)\n"
                 proc.terminate()
                 break
 
-            # Small sleep to yield to UI/OS
-            time.sleep(0.1)
+            time.sleep(0.01)
 
     except Exception as e:
-        st.session_state.repl_output_storage += f"[error] Process failed: {str(e)}\n"
-    
-    # Mark as finished
+        st.session_state.repl_output += f"[error] Process failed: {str(e)}\n"
+
     st.session_state.is_running = False
-    st.rerun() # Refresh to reset buttons
+    st.rerun()
