@@ -31,6 +31,9 @@ if "repl_timeout" not in st.session_state:
 if "is_running" not in st.session_state:
     st.session_state.is_running = False
 
+if "ace_version" not in st.session_state:
+    st.session_state.ace_version = 0
+
 
 # ─── Helper Functions ───────────────────────────────────────────────────────
 def load_file_dialog():
@@ -87,9 +90,9 @@ def handle_load():
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 loaded = f.read()
-            # Write to the persistent state AND the widget key
+            # Write to the persistent state and bump ace version to force re-render
             st.session_state.repl_code = loaded
-            st.session_state.repl_code_editor = loaded
+            st.session_state.ace_version += 1
             st.toast(f"Loaded {os.path.basename(file_path)}", icon="✅")
         except Exception as e:
             st.toast(f"Failed to load: {e}", icon="❌")
@@ -219,7 +222,7 @@ with col_code:
             auto_update=True,
             height=600,
             font_size=14,
-            key="repl_code_editor"
+            key=f"repl_code_editor_{st.session_state.ace_version}"
         )
         # Sync ace editor content back to persistent state
         if ace_content is not None and ace_content != st.session_state.repl_code:
