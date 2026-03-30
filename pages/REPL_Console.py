@@ -18,6 +18,9 @@ if "ui_cfg" not in st.session_state:
 if "repl_code" not in st.session_state:
     st.session_state.repl_code = "# Write your MicroPython code here\nprint('Hello from NanoPD!')\n"
 
+if "repl_code_editor" not in st.session_state:
+    st.session_state.repl_code_editor = st.session_state.repl_code
+
 if "repl_output" not in st.session_state:
     st.session_state.repl_output = ""
 
@@ -207,7 +210,6 @@ with col_code:
         )
         st.text_area(
             "Code Editor",
-            value=st.session_state.repl_code,
             height=615,
             label_visibility="collapsed",
             key="repl_code_editor",
