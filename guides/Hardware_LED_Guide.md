@@ -29,11 +29,12 @@ There are two primary ways to deploy the `example/LED.py` (or any script) to you
 ### Method A: Filesystem Integration (Persistent)
 Use the **Filesystem** page to manage files stored on the MCU's internal flash memory.
 
-1.  **Preparation**: Rename your local script (e.g., `LED.py`) to `main.py` if you want it to run automatically on boot.
-2.  **Upload**:
-    *   **Virtual Drive**: Use the "Mount Virtual Drive" feature to open the MCU as a local disk, then drag and drop `main.py`.
-    *   **Push to MCU**: Select the local file in the Filesystem interface and click **Push to MCU**.
-3.  **Execution**: Reset the board or use "Soft Reset" to trigger the new `main.py`.
+1.  **Stage to Project**: Copy `example/LED.py` (from the root) and paste it into the **`mcu/`** folder.
+2.  **Preparation**: Rename the file inside the `mcu/` folder to **`main.py`** so it runs automatically on boot.
+3.  **Upload & Execute**:
+    *   **Push to MCU**: In the Filesystem interface, select the newly renamed `main.py` from the local source and click **Push to MCU**.
+    *   **Virtual Drive**: Alternatively, if the Virtual Drive is mounted, drag and drop the `main.py` directly into the mapped drive.
+4.  **Reset**: Perform a Soft Reset or hardware power cycle to trigger the new `main.py`.
 
 ### Method B: REPL Console (Immediate/Testing)
 The **REPL Console** is ideal for rapid prototyping without writing to the permanent flash.
