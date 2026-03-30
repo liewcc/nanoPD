@@ -133,13 +133,13 @@ code_lh = st.session_state.ui_cfg.get("code_lh", "1.3")
 
 st.markdown(f"""
     <style>
-        /* ── Left Column: Buttons+Timeout container ── reset height to auto */
+        /* ── Left Column: Buttons+Timeout container (nth-child 1) ── reset to auto */
         [data-testid="column"]:nth-of-type(1) .element-container:nth-child(1) [data-testid="stVerticalBlockBorderWrapper"] {{
             height: auto !important;
         }}
 
-        /* ── Left Column: CODING container (2nd element-container) ── */
-        [data-testid="column"]:nth-of-type(1) .element-container:nth-child(2) [data-testid="stVerticalBlockBorderWrapper"] {{
+        /* ── Left Column: CODING container (nth-child 3, after 1=buttons, 2=label) ── */
+        [data-testid="column"]:nth-of-type(1) .element-container:nth-child(3) [data-testid="stVerticalBlockBorderWrapper"] {{
             height: calc(100vh - 290px) !important;
             overflow-y: auto !important;
         }}
