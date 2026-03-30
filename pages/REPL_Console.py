@@ -133,15 +133,6 @@ code_lh = st.session_state.ui_cfg.get("code_lh", "1.3")
 
 st.markdown(f"""
     <style>
-        section[data-testid="stMain"] > div {{
-            padding-bottom: 20px !important;
-        }}
-        .main > div.block-container {{
-            padding-bottom: 20px !important;
-        }}
-        div[data-testid="block-container"] {{
-            padding-bottom: 20px !important;
-        }}
         .repl-output-block pre code {{
             font-family: {code_font} !important;
             font-size: {code_size} !important;
