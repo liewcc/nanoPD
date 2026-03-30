@@ -6,3 +6,4 @@ st-theme
 mpremote
 pyserial
 plotly
+streamlit-ace
