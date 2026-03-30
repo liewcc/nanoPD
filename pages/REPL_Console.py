@@ -135,13 +135,13 @@ st.markdown(f"""
     <style>
         /* Coding Container (Left Column, 2nd Container) - Dynamically scales to monitor */
         div[data-testid="column"]:nth-of-type(1) [data-testid="stVerticalBlockBorderWrapper"]:nth-of-type(2) {{
-            height: calc(100vh - 275px) !important;
+            height: calc(100vh - 345px) !important;
             overflow-y: auto !important;
         }}
 
         /* MCU Output Container (Right Column, 1st Container) - Dynamically scales to monitor */
         div[data-testid="column"]:nth-of-type(2) [data-testid="stVerticalBlockBorderWrapper"]:nth-of-type(1) {{
-            height: calc(100vh - 110px) !important;
+            height: calc(100vh - 180px) !important;
             overflow-y: hidden !important;
         }}
 

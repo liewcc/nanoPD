@@ -43,7 +43,7 @@ body,
 /* 3. Dashboard Card Stretching & Scrolling (Fix B) */
 [data-testid="stVerticalBlockBorderWrapper"] {
     /* Precise calculation to avoid browser scroll: Viewport - Top elements */
-    height: calc(100vh - 270px) !important;
+    height: calc(100vh - 340px) !important;
     overflow-y: auto !important;
     overflow-x: hidden !important;
     background-color: #ffffff !important;
