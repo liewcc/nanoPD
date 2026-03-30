@@ -16,6 +16,8 @@ def get_global_styles(
         box-sizing: border-box !important;
         height: 100vh !important;
         width: 100vw !important;
+        overflow: hidden !important;
+        position: fixed !important;
         margin: 0 !important;
         padding: 0 !important;
     }}
@@ -38,11 +40,12 @@ def get_global_styles(
         margin-left: 0 !important;
         margin-top: 0 !important; 
         padding-top: 1.5rem !important; 
-        padding-bottom: 60px !important; /* Huge padding buffer at bottom */
+        padding-bottom: 20px !important;
         padding-left: 1rem !important;
         padding-right: 3rem !important;
         box-sizing: border-box !important;
-        height: 100% !important;
+        height: 100vh !important;
+        overflow: hidden !important;
     }}
 
     /* 4. Title (Subheader) Scaling - Targets st.subheader (Title 1/2) */

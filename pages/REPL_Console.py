@@ -133,17 +133,16 @@ code_lh = st.session_state.ui_cfg.get("code_lh", "1.3")
 
 st.markdown(f"""
     <style>
-        /* Override global style.css forced height on bordered containers for this page */
-        [data-testid="stVerticalBlockBorderWrapper"] {{
-            height: auto !important;
+        /* Coding Container (Left Column, 2nd Container) - Dynamically scales to monitor */
+        div[data-testid="column"]:nth-of-type(1) [data-testid="stVerticalBlockBorderWrapper"]:nth-of-type(2) {{
+            height: calc(100vh - 275px) !important;
             overflow-y: auto !important;
         }}
 
-        /* Restore main content area scrolling for multi-container layout */
-        [data-testid="stAppViewBlockContainer"],
-        .block-container {{
-            overflow-y: auto !important;
-            overflow-x: hidden !important;
+        /* MCU Output Container (Right Column, 1st Container) - Dynamically scales to monitor */
+        div[data-testid="column"]:nth-of-type(2) [data-testid="stVerticalBlockBorderWrapper"]:nth-of-type(1) {{
+            height: calc(100vh - 110px) !important;
+            overflow-y: hidden !important;
         }}
 
         .repl-output-block pre code {{
@@ -211,7 +210,7 @@ with col_code:
             )
 
     # Coding container (B) with border
-    with st.container(height=658, border=True):
+    with st.container(border=True):
         st.markdown(
             '<p class="metric-label" style="margin:0 0 12px 0">CODING</p>',
             unsafe_allow_html=True
@@ -224,7 +223,7 @@ with col_code:
             show_print_margin=False,
             wrap=True,
             auto_update=True,
-            height=580,
+            height=600,
             font_size=14,
             key=f"repl_code_editor_{st.session_state.ace_version}"
         )
@@ -233,7 +232,7 @@ with col_code:
             st.session_state.repl_code = ace_content
 
 with col_output:
-    with st.container(height=832, border=True):
+    with st.container(border=True):
         st.markdown(
             '<p class="metric-label" style="margin:0 0 12px 0">MCU OUTPUT</p>',
             unsafe_allow_html=True
@@ -242,7 +241,7 @@ with col_output:
         output_placeholder.code(
             st.session_state.repl_output if st.session_state.repl_output else "(waiting for execution...)",
             language="text",
-            height=765
+            height=785
         )
 
 
