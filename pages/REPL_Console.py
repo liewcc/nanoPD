@@ -14,12 +14,12 @@ from utils.mount_utils import is_mounted, is_rp2350_connected, CREATIONFLAGS
 if "ui_cfg" not in st.session_state:
     st.session_state.ui_cfg = load_ui_config()
 
-# Source of truth for the editor content
-if "repl_code_editor" not in st.session_state:
-    st.session_state.repl_code_editor = "# Write your MicroPython code here\nprint('Hello from NanoPD!')\n"
+# Persistent storage for page navigation (Streamlit clears widget keys on page exit)
+if "repl_code_storage" not in st.session_state:
+    st.session_state.repl_code_storage = "# Write your MicroPython code here\nprint('Hello from NanoPD!')\n"
 
-if "repl_output" not in st.session_state:
-    st.session_state.repl_output = ""
+if "repl_output_storage" not in st.session_state:
+    st.session_state.repl_output_storage = ""
 
 if "repl_timeout" not in st.session_state:
     st.session_state.repl_timeout = 30
@@ -68,8 +68,12 @@ def save_file_dialog(content: str):
 
 
 # ─── Callbacks (Handle state & blocking IO) ─────────────
+def sync_code_storage():
+    """Sync the widget state back to persistent storage."""
+    st.session_state.repl_code_storage = st.session_state.repl_code_editor
+
 def handle_save():
-    content = st.session_state.repl_code_editor
+    content = st.session_state.repl_code_storage
     saved_path = save_file_dialog(content)
     if saved_path:
         st.toast(f"Saved to {os.path.basename(saved_path)}", icon="✅")
@@ -81,7 +85,7 @@ def handle_load():
     if file_path:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                st.session_state.repl_code_editor = f.read()
+                st.session_state.repl_code_storage = f.read()
             st.toast(f"Loaded {os.path.basename(file_path)}", icon="✅")
         except Exception as e:
             st.toast(f"Failed to load: {e}", icon="❌")
@@ -89,7 +93,7 @@ def handle_load():
         st.toast("Load cancelled.", icon="ℹ️")
 
 def handle_clear():
-    st.session_state.repl_output = ""
+    st.session_state.repl_output_storage = ""
 
 def handle_run_toggle():
     # Toggle state - script body handles the actual process management
@@ -208,9 +212,11 @@ with col_code:
         )
         st.text_area(
             "Code Editor",
-            height=660,
+            value=st.session_state.repl_code_storage,
+            height=630, # Reduced to ensure container border visibility
             label_visibility="collapsed",
-            key="repl_code_editor"
+            key="repl_code_editor",
+            on_change=sync_code_storage
         )
 
 # ─── NON-BLOCKING EXECUTION ENGINE ───────────────────────────────────────── (In the output column)
@@ -228,7 +234,7 @@ with col_output:
 
         # Render the current buffer immediately
         output_placeholder.code(
-            st.session_state.repl_output if st.session_state.repl_output else "(waiting for execution...)",
+            st.session_state.repl_output_storage if st.session_state.repl_output_storage else "(waiting for execution...)",
             language="text"
         )
 
@@ -243,10 +249,10 @@ if st.session_state.is_running:
         st.rerun()
 
     timestamp = time.strftime("%H:%M:%S")
-    st.session_state.repl_output += f"[{timestamp}] >> Run\n"
+    st.session_state.repl_output_storage += f"[{timestamp}] >> Run\n"
     
     # Refresh the display with the new header
-    output_placeholder.code(st.session_state.repl_output, language="text")
+    output_placeholder.code(st.session_state.repl_output_storage, language="text")
 
     # Start Popen process
     cmd = [sys.executable, "-m", "mpremote", "exec", code_to_run]
@@ -264,10 +270,18 @@ if st.session_state.is_running:
         
         # Poll the process
         while True:
-            # 1. Check if user clicked "Stop" (This is tricky - another click triggers rerun)
-            # In Streamlit, a rerun while in this loop would kill this script execution instance.
-            # However, we'll check if the process is done or if timeout reached.
-            
+            # Check if finished
+            if proc.poll() is not None:
+                # Get remaining output
+                remaining_stdout, remaining_stderr = proc.communicate()
+                if remaining_stdout:
+                    for l in remaining_stdout.splitlines():
+                        st.session_state.repl_output_storage += f"<< {l}\n"
+                if remaining_stderr:
+                    for l in remaining_stderr.splitlines():
+                        st.session_state.repl_output_storage += f"[stderr] {l}\n"
+                break
+
             # Non-blocking read of stdout
             import selectors
             sel = selectors.DefaultSelector()
@@ -279,33 +293,21 @@ if st.session_state.is_running:
                 line = key.fileobj.readline()
                 if line:
                     prefix = "<<" if key.fileobj is proc.stdout else "[stderr]"
-                    st.session_state.repl_output += f"{prefix} {line}"
+                    st.session_state.repl_output_storage += f"{prefix} {line}"
                     # Update live display
-                    output_placeholder.code(st.session_state.repl_output, language="text")
-
-            # Check if finished
-            if proc.poll() is not None:
-                # Get remaining output
-                remaining_stdout, remaining_stderr = proc.communicate()
-                if remaining_stdout:
-                    for l in remaining_stdout.splitlines():
-                        st.session_state.repl_output += f"<< {l}\n"
-                if remaining_stderr:
-                    for l in remaining_stderr.splitlines():
-                        st.session_state.repl_output += f"[stderr] {l}\n"
-                break
+                    output_placeholder.code(st.session_state.repl_output_storage, language="text")
 
             # Check timeout
             if (time.time() - start_time) > timeout_val:
-                st.session_state.repl_output += f"\n[TIMEOUT] Connection closed after {timeout_val}s (Script may still be running on MCU)\n"
+                st.session_state.repl_output_storage += f"\n[TIMEOUT] Connection closed after {timeout_val}s (Script may still be running on MCU)\n"
                 proc.terminate()
                 break
 
             # Small sleep to yield to UI/OS
-            time.sleep(0.01)
+            time.sleep(0.1)
 
     except Exception as e:
-        st.session_state.repl_output += f"[error] Process failed: {str(e)}\n"
+        st.session_state.repl_output_storage += f"[error] Process failed: {str(e)}\n"
     
     # Mark as finished
     st.session_state.is_running = False
