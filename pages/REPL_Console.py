@@ -133,6 +133,19 @@ code_lh = st.session_state.ui_cfg.get("code_lh", "1.3")
 
 st.markdown(f"""
     <style>
+        /* Override global style.css forced height on bordered containers for this page */
+        [data-testid="stVerticalBlockBorderWrapper"] {{
+            height: auto !important;
+            overflow-y: auto !important;
+        }}
+
+        /* Restore main content area scrolling for multi-container layout */
+        [data-testid="stAppViewBlockContainer"],
+        .block-container {{
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+        }}
+
         .repl-output-block pre code {{
             font-family: {code_font} !important;
             font-size: {code_size} !important;
