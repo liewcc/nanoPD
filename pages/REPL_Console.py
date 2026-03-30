@@ -200,7 +200,7 @@ with col_code:
             )
 
     # Coding container (B) with border
-    with st.container(height=665, border=True):
+    with st.container(height=645, border=True):
         st.markdown(
             '<p class="metric-label" style="margin:0 0 12px 0">CODING</p>',
             unsafe_allow_html=True
@@ -208,7 +208,7 @@ with col_code:
         st.text_area(
             "Code Editor",
             value=st.session_state.repl_code,
-            height=600,
+            height=580,
             label_visibility="collapsed",
             key="repl_code_editor",
             on_change=sync_code_to_state
