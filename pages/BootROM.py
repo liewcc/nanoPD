@@ -41,7 +41,7 @@ st.markdown(f"""
         color: #1e293b;
         overflow-x: auto;
         white-space: pre;
-        height: 785px;
+        height: calc(100vh - 220px);
         overflow-y: auto;
     }}
     .end-of-scan {{
@@ -65,7 +65,7 @@ connected = is_rp2350_connected()
 col1, col2 = st.columns([1, 4])
 
 with col1:
-    with st.container(height=850, border=True):
+    with st.container(border=True):
         st.markdown('<p class="metric-label" style="margin:0 0 12px 0">SCAN CONTROL</p>', unsafe_allow_html=True)
         
         start_addr_str = st.text_input("Start Address (Hex)", key="boot_start_input", disabled=mounted or is_scanning)
@@ -79,7 +79,7 @@ with col1:
             st.rerun()
 
 with col2:
-    with st.container(height=850, border=True):
+    with st.container(border=True):
         st.markdown('<p class="metric-label" style="margin:0 0 12px 0">BOOT ROM HEX VIEW</p>', unsafe_allow_html=True)
         
         bootrom_raw = st.session_state.get("bootrom_data", "No data. Click 'SCAN BOOTROM' to begin.")

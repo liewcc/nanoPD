@@ -41,7 +41,7 @@ st.markdown(f"""
         color: #1e293b;
         overflow-x: auto;
         white-space: pre;
-        height: 785px;
+        height: calc(100vh - 220px);
         overflow-y: auto;
     }}
     .end-of-scan {{
@@ -65,7 +65,7 @@ connected = is_rp2350_connected()
 col1, col2 = st.columns([1, 4])
 
 with col1:
-    with st.container(height=850, border=True):
+    with st.container(border=True):
         st.markdown('<p class="metric-label" style="margin:0 0 12px 0">OTP CONTROL</p>', unsafe_allow_html=True)
         
         OTP_MODES = {
@@ -96,7 +96,7 @@ with col1:
             st.rerun()
 
 with col2:
-    with st.container(height=850, border=True):
+    with st.container(border=True):
         st.markdown(f'<p class="metric-label" style="margin:0 0 12px 0">OTP HEX VIEW | {selected_mode}</p>', unsafe_allow_html=True)
         
         otp_raw = st.session_state.get("otp_data", "No data. Click 'SCAN OTP' to begin.")

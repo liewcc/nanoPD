@@ -22,28 +22,25 @@ body,
     max-width: 100% !important;
     width: 100% !important;
     padding-top: 1.5rem !important;
-    padding-bottom: 20px !important;
-    /* Reduce side paddings to absolute minimum to close the gap */
+    padding-bottom: 1.5rem !important;
     padding-left: 1rem !important;
     padding-right: 1rem !important;
     box-sizing: border-box !important;
-    display: flex !important;
-    flex-direction: column !important;
-    height: 100vh !important;
+    /* Let height be determined by Streamlit's own flex layout, not a fixed 100vh */
+    height: calc(100vh - 60px) !important;
     overflow: hidden !important;
 }
 
 /* Ensure the vertical block inside main fills the space */
 .main .block-container>div {
     height: 100% !important;
-    display: flex !important;
-    flex-direction: column !important;
+    overflow: hidden !important;
 }
 
 /* 3. Dashboard Card Stretching & Scrolling (Fix B) */
 [data-testid="stVerticalBlockBorderWrapper"] {
-    /* Precise calculation to avoid browser scroll: Viewport - Top elements */
-    height: calc(100vh - 340px) !important;
+    /* Fill whatever space remains in the flex column above */
+    height: calc(100vh - 160px) !important;
     overflow-y: auto !important;
     overflow-x: hidden !important;
     background-color: #ffffff !important;

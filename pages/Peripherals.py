@@ -82,7 +82,7 @@ st.markdown("""
         color: #0f172a;
         overflow-x: auto;
         white-space: pre;
-        height: 655px;
+        height: calc(100vh - 310px);
         overflow-y: auto;
     }
     
@@ -171,10 +171,7 @@ st.markdown("""
         margin-top: 12px;
     }
 
-    /* Fix Streamlit padding */
-    section[data-testid="stMain"] > div {
-        padding-bottom: 20px !important;
-    }
+    /* Fix Streamlit padding - handled globally in style.css */
 </style>
 """, unsafe_allow_html=True)
 
@@ -244,7 +241,7 @@ with st.container(border=True):
 col_list, col_analysis = st.columns([1.2, 1.5])
 
 with col_list:
-    with st.container(height=720, border=True):
+    with st.container(border=True):
         st.markdown('<p class="metric-label" style="margin:0 0 12px 0">REGISTER LIST (32-BIT)</p>', unsafe_allow_html=True)
         lines = []
         divider = "-" * 58
@@ -276,7 +273,7 @@ with col_list:
         st.markdown(f"<div class='hex-terminal'>{term_text}</div>", unsafe_allow_html=True)
 
 with col_analysis:
-    with st.container(height=720, border=True):
+    with st.container(border=True):
         st.markdown('<p class="metric-label" style="margin:0 0 12px 0">REGISTER ANALYSIS</p>', unsafe_allow_html=True)
         if selected_addr_hex:
             sel_addr = int(selected_addr_hex, 16)

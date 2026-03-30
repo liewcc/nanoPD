@@ -368,13 +368,7 @@ code_lh = st.session_state.ui_cfg.get("code_lh", "1.3")
 st.markdown(f"""
     <style>
         section[data-testid="stMain"] > div {{
-            padding-bottom: 20px !important;
-        }}
-        .main > div.block-container {{
-            padding-bottom: 20px !important;
-        }}
-        div[data-testid="block-container"] {{
-            padding-bottom: 20px !important;
+            /* No override needed - handled globally */
         }}
         
         /* Tree-specific styling using :has() to restrict to tree containers */
@@ -438,7 +432,7 @@ col_left, col_right1, col_right2 = st.columns([1, 1.2, 1.2])
 
 # Left: Control Container
 with col_left:
-    with st.container(height=850, border=True):
+    with st.container(border=True):
         st.markdown('<p class="metric-label" style="margin:0 0 12px 0">CONTROL</p>', unsafe_allow_html=True)
         
         # Add Storage Gauge at the top
@@ -622,7 +616,7 @@ for p in {paths_json}: rm_rf('/' + p)
 
 # Right 1: Local Filesystem Container
 with col_right1:
-    with st.container(height=850, border=True):
+    with st.container(border=True):
         wrapper_class = "custom-tree-wrapper" if st.session_state["delete_mode"] else "custom-tree-wrapper readonly-tree-wrapper"
         st.markdown(f'<div class="{wrapper_class}" style="display:none;"></div>', unsafe_allow_html=True)
         st.markdown('<p class="metric-label" style="margin:0 0 12px 0">LOCAL</p>', unsafe_allow_html=True)
@@ -633,7 +627,7 @@ with col_right1:
 
 # Right 2: MCU Filesystem Container
 with col_right2:
-    with st.container(height=850, border=True):
+    with st.container(border=True):
         wrapper_class = "custom-tree-wrapper" if st.session_state["delete_mode"] else "custom-tree-wrapper readonly-tree-wrapper"
         st.markdown(f'<div class="{wrapper_class}" style="display:none;"></div>', unsafe_allow_html=True)
         st.markdown('<p class="metric-label" style="margin:0 0 12px 0">MCU FLASH</p>', unsafe_allow_html=True)
