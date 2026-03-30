@@ -73,7 +73,8 @@ def save_file_dialog(content: str):
 
 # ─── Callbacks ──────────────────────────────────────────────────────────────
 def handle_save():
-    content = st.session_state.repl_code
+    # Read the latest content from the widget key before it disappears
+    content = st.session_state.get("repl_code_editor", st.session_state.repl_code)
     saved_path = save_file_dialog(content)
     if saved_path:
         st.toast(f"Saved to {os.path.basename(saved_path)}", icon="✅")
@@ -86,11 +87,9 @@ def handle_load():
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 loaded = f.read()
-            # Force update the persistent value
+            # Write to the persistent state AND the widget key
             st.session_state.repl_code = loaded
-            # Remove ace key to force re-initialization with new value param
-            if "ace_editor" in st.session_state:
-                del st.session_state["ace_editor"]
+            st.session_state.repl_code_editor = loaded
             st.toast(f"Loaded {os.path.basename(file_path)}", icon="✅")
         except Exception as e:
             st.toast(f"Failed to load: {e}", icon="❌")
@@ -102,6 +101,10 @@ def handle_clear():
 
 def handle_run_toggle():
     st.session_state.is_running = not st.session_state.is_running
+
+def sync_code_to_state():
+    """Syncs the widget key back to the persistent state on every edit."""
+    st.session_state.repl_code = st.session_state.repl_code_editor
 
 def sync_from_num():
     st.session_state.repl_timeout = st.session_state.timeout_num
@@ -206,30 +209,22 @@ with col_code:
             '<p class="metric-label" style="margin:0 0 12px 0">CODING</p>',
             unsafe_allow_html=True
         )
-        
-        # Parse font size gracefully
-        font_size_str = st.session_state.ui_cfg.get("code_size", "14px").replace("px", "")
-        font_size_int = int(font_size_str) if font_size_str.isdigit() else 14
-        
-        # Streamlit ACE code editor with line numbers and syntax highlighting
-        new_code = st_ace(
+        edited_code = st_ace(
             value=st.session_state.repl_code,
             language="python",
-            theme="tomorrow", # Professional light theme matching the UI vibes
-            keybinding="vscode",
-            font_size=font_size_int,
+            theme="tomorrow",
             show_gutter=True,
             show_print_margin=False,
             wrap=True,
             auto_update=True,
-            height=615,
-            key="ace_editor"
+            min_lines=28,
+            max_lines=28,
+            font_size=14,
+            key="repl_code_editor"
         )
-        
-        # Sync widget return value back to persistence state
-        if new_code is not None and new_code != st.session_state.repl_code:
-            st.session_state.repl_code = new_code
-
+        # st_ace returns the edited code as its return value
+        if edited_code is not None and edited_code != st.session_state.repl_code:
+            st.session_state.repl_code = edited_code
 
 with col_output:
     with st.container(height=852, border=True):
