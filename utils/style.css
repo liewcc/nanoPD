@@ -11,26 +11,23 @@ body,
     box-sizing: border-box !important;
     height: 100vh !important;
     width: 100vw !important;
-    overflow: hidden !important;
     margin: 0 !important;
     padding: 0 !important;
-    position: fixed !important;
 }
 
 /* 2. Main Content Area Reset (Fix A - Eliminates the 421px gap) */
 .main .block-container {
     max-width: 100% !important;
     width: 100% !important;
-    padding-top: 1.5rem !important;
-    padding-bottom: 20px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
     /* Reduce side paddings to absolute minimum to close the gap */
     padding-left: 1rem !important;
     padding-right: 1rem !important;
     box-sizing: border-box !important;
     display: flex !important;
     flex-direction: column !important;
-    height: 100vh !important;
-    overflow: hidden !important;
+    height: 100% !important;
 }
 
 /* Ensure the vertical block inside main fills the space */
