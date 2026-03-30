@@ -200,7 +200,7 @@ with col_code:
             )
 
     # Coding container (B) with border
-    with st.container(height=645, border=True):
+    with st.container(height=678, border=True):
         st.markdown(
             '<p class="metric-label" style="margin:0 0 12px 0">CODING</p>',
             unsafe_allow_html=True
@@ -208,7 +208,7 @@ with col_code:
         st.text_area(
             "Code Editor",
             value=st.session_state.repl_code,
-            height=580,
+            height=615,
             label_visibility="collapsed",
             key="repl_code_editor",
             on_change=sync_code_to_state
@@ -254,39 +254,57 @@ if st.session_state.is_running:
         )
 
         start_time = time.time()
-        import selectors
+        import threading
+        import queue
+
+        out_q = queue.Queue()
+
+        def enqueue_output(out, prefix):
+            try:
+                for line in iter(out.readline, ''):
+                    if line:
+                        out_q.put((prefix, line))
+            except ValueError:
+                pass # Stream closed
+            finally:
+                out.close()
+
+        threading.Thread(target=enqueue_output, args=(proc.stdout, "<<"), daemon=True).start()
+        threading.Thread(target=enqueue_output, args=(proc.stderr, "[stderr]"), daemon=True).start()
 
         while True:
-            sel = selectors.DefaultSelector()
-            sel.register(proc.stdout, selectors.EVENT_READ)
-            sel.register(proc.stderr, selectors.EVENT_READ)
-
-            events = sel.select(timeout=0.1)
-            for key, mask in events:
-                line = key.fileobj.readline()
-                if line:
-                    prefix = "<<" if key.fileobj is proc.stdout else "[stderr]"
+            # Drain whatever is in the queue
+            updated = False
+            try:
+                while True:
+                    prefix, line = out_q.get_nowait()
                     st.session_state.repl_output += f"{prefix} {line}"
-                    output_placeholder.code(st.session_state.repl_output, language="text", height=785)
-
-            sel.close()
+                    updated = True
+            except queue.Empty:
+                pass
+            
+            # If we got any new output, update the UI once per loop iteration
+            if updated:
+                output_placeholder.code(st.session_state.repl_output, language="text", height=785)
 
             if proc.poll() is not None:
-                remaining_stdout, remaining_stderr = proc.communicate()
-                if remaining_stdout:
-                    for l in remaining_stdout.splitlines():
-                        st.session_state.repl_output += f"<< {l}\n"
-                if remaining_stderr:
-                    for l in remaining_stderr.splitlines():
-                        st.session_state.repl_output += f"[stderr] {l}\n"
+                # Do one final drain to ensure nothing is missed
+                try:
+                    while True:
+                        prefix, line = out_q.get_nowait()
+                        st.session_state.repl_output += f"{prefix} {line}"
+                except queue.Empty:
+                    pass
+                output_placeholder.code(st.session_state.repl_output, language="text", height=785)
                 break
 
             if (time.time() - start_time) > timeout_val:
                 st.session_state.repl_output += f"\n[TIMEOUT] Connection closed after {timeout_val}s (Script may still be running on MCU)\n"
+                output_placeholder.code(st.session_state.repl_output, language="text", height=785)
                 proc.terminate()
                 break
 
-            time.sleep(0.01)
+            time.sleep(0.02)
 
     except Exception as e:
         st.session_state.repl_output += f"[error] Process failed: {str(e)}\n"
