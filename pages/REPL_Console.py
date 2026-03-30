@@ -211,7 +211,7 @@ with col_code:
             )
 
     # Coding container (B) with border
-    with st.container(height=678, border=True):
+    with st.container(height=658, border=True):
         st.markdown(
             '<p class="metric-label" style="margin:0 0 12px 0">CODING</p>',
             unsafe_allow_html=True
@@ -224,7 +224,7 @@ with col_code:
             show_print_margin=False,
             wrap=True,
             auto_update=True,
-            height=600,
+            height=580,
             font_size=14,
             key=f"repl_code_editor_{st.session_state.ace_version}"
         )
@@ -233,7 +233,7 @@ with col_code:
             st.session_state.repl_code = ace_content
 
 with col_output:
-    with st.container(height=852, border=True):
+    with st.container(height=832, border=True):
         st.markdown(
             '<p class="metric-label" style="margin:0 0 12px 0">MCU OUTPUT</p>',
             unsafe_allow_html=True
@@ -242,7 +242,7 @@ with col_output:
         output_placeholder.code(
             st.session_state.repl_output if st.session_state.repl_output else "(waiting for execution...)",
             language="text",
-            height=785
+            height=765
         )
 
 
