@@ -8,7 +8,7 @@ The XIAO RP2350 features three distinct LED systems. While many online resources
 
 | LED Type | Label | GPIO (RP2350) | Logic / Requirement |
 | :--- | :--- | :--- | :--- |
-| **Power LED** | `PWR` | N/A | Hardware-managed (Green). Lights up when USB/Battery power is active. |
+| **Power LED** | `PWR` | N/A | Hardware-managed (Red). Lights up when USB/Battery power is active. |
 | **User LED** | `L` | **GPIO 25** | Programmable Mono LED (Yellow). |
 | **RGB NeoPixel** | `RGB` | **GPIO 22** (Data) | WS2812 Addressable LED. |
 | **RGB Power** | `V_RGB` | **GPIO 23** (Power) | **CRITICAL**: Use `Pin(23).value(1)` to enable power to the RGB LED. |
