@@ -12,6 +12,7 @@
   - [XIAO RP2350 Telemetry Research](guides/xiao_rp2350_telemetry_research.md)
   - [XIAO RP2350 Reset Behavior](guides/xiao_rp2350_reset_behavior.md)
   - [RP2350 Peripherals & Register Analysis Guide](guides/Peripherals_Guide.md)
+  - [Hardware LED Control Guide](guides/Hardware_LED_Guide.md)
 
 # NanoPD 2.0
 
@@ -66,5 +67,6 @@ Detailed research and interpretation manuals for NanoPD 2.0 components:
 *   **[XIAO RP2350 Telemetry Research](guides/xiao_rp2350_telemetry_research.md)**: Deep dive into the hardware nuances, ADC ghosting, and voltage sensing logic.
 *   **[XIAO RP2350 Reset Behavior](guides/xiao_rp2350_reset_behavior.md)**: Official documentation detailing why the RST button and USB power cycles are identical on hardware level.
 *   **[RP2350 Peripherals & Register Analysis Guide](guides/Peripherals_Guide.md)**: Learn how we extract official SVD definitions for live bit-level hardware reads.
+*   **[Hardware LED Control Guide](guides/Hardware_LED_Guide.md)**: Detailed pinout and logic for User LED and RGB NeoPixel on the XIAO RP2350.
 
 ---
