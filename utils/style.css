@@ -1,10 +1,14 @@
 /* NanoPD 2.0 ABSOLUTE FINAL CSS - NO SCROLL, NO GAPS */
 
 /* 1. Global Viewport Lock (Fix C) */
-html, body, .stApp, 
-[data-testid="stAppViewContainer"], 
+html,
+body,
+.stApp,
+[data-testid="stAppViewContainer"],
 [data-testid="stAppViewBlockContainer"],
-.main, .stMain {
+.main,
+.stMain {
+    box-sizing: border-box !important;
     height: 100vh !important;
     width: 100vw !important;
     overflow: hidden !important;
@@ -18,10 +22,11 @@ html, body, .stApp,
     max-width: 100% !important;
     width: 100% !important;
     padding-top: 1.5rem !important;
-    padding-bottom: 0 !important;
+    padding-bottom: 20px !important;
     /* Reduce side paddings to absolute minimum to close the gap */
     padding-left: 1rem !important;
     padding-right: 1rem !important;
+    box-sizing: border-box !important;
     display: flex !important;
     flex-direction: column !important;
     height: 100vh !important;
@@ -29,7 +34,7 @@ html, body, .stApp,
 }
 
 /* Ensure the vertical block inside main fills the space */
-.main .block-container > div {
+.main .block-container>div {
     height: 100% !important;
     display: flex !important;
     flex-direction: column !important;
@@ -38,7 +43,7 @@ html, body, .stApp,
 /* 3. Dashboard Card Stretching & Scrolling (Fix B) */
 [data-testid="stVerticalBlockBorderWrapper"] {
     /* Precise calculation to avoid browser scroll: Viewport - Top elements */
-    height: calc(100vh - 270px) !important; 
+    height: calc(100vh - 270px) !important;
     overflow-y: auto !important;
     overflow-x: hidden !important;
     background-color: #ffffff !important;
@@ -48,7 +53,7 @@ html, body, .stApp,
 }
 
 /* Enable internal scrolling for the content inside the border wrapper */
-[data-testid="stVerticalBlockBorderWrapper"] > div {
+[data-testid="stVerticalBlockBorderWrapper"]>div {
     max-height: 100% !important;
 }
 
@@ -56,6 +61,7 @@ html, body, .stApp,
 [data-testid="stVerticalBlockBorderWrapper"]::-webkit-scrollbar {
     width: 8px;
 }
+
 [data-testid="stVerticalBlockBorderWrapper"]::-webkit-scrollbar-thumb {
     background: #cbd5e1;
     border-radius: 10px;
@@ -80,4 +86,6 @@ section[data-testid="stSidebar"] {
     text-transform: uppercase;
 }
 
-footer { display: none !important; }
+footer {
+    display: none !important;
+}

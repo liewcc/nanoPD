@@ -13,6 +13,7 @@ def get_global_styles(
     return f"""
     /* 1. Viewport Locking */
     html, body, .stApp, [data-testid="stAppViewContainer"] {{
+        box-sizing: border-box !important;
         height: 100vh !important;
         width: 100vw !important;
         overflow: hidden !important;
@@ -37,9 +38,10 @@ def get_global_styles(
         margin-left: 0 !important;
         margin-top: 0 !important; 
         padding-top: 1.5rem !important; 
-        padding-bottom: 20px !important;
+        padding-bottom: 1.5rem !important;
         padding-left: 1rem !important;
         padding-right: 3rem !important;
+        box-sizing: border-box !important;
         height: 100vh !important;
         overflow: hidden !important;
     }}
