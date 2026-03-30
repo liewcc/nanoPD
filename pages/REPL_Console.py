@@ -257,54 +257,48 @@ if st.session_state.is_running:
         import threading
         import queue
 
-        out_q = queue.Queue()
+        q = queue.Queue()
 
         def enqueue_output(out, prefix):
-            try:
-                for line in iter(out.readline, ''):
-                    if line:
-                        out_q.put((prefix, line))
-            except ValueError:
-                pass # Stream closed
-            finally:
-                out.close()
+            for line in iter(out.readline, ''):
+                q.put((prefix, line))
+            out.close()
 
-        threading.Thread(target=enqueue_output, args=(proc.stdout, "<<"), daemon=True).start()
-        threading.Thread(target=enqueue_output, args=(proc.stderr, "[stderr]"), daemon=True).start()
+        t_out = threading.Thread(target=enqueue_output, args=(proc.stdout, "<<"), daemon=True)
+        t_err = threading.Thread(target=enqueue_output, args=(proc.stderr, "[stderr]"), daemon=True)
+        t_out.start()
+        t_err.start()
 
         while True:
-            # Drain whatever is in the queue
             updated = False
-            try:
-                while True:
-                    prefix, line = out_q.get_nowait()
+            while not q.empty():
+                try:
+                    prefix, line = q.get_nowait()
                     st.session_state.repl_output += f"{prefix} {line}"
                     updated = True
-            except queue.Empty:
-                pass
+                except queue.Empty:
+                    break
             
-            # If we got any new output, update the UI once per loop iteration
             if updated:
                 output_placeholder.code(st.session_state.repl_output, language="text", height=785)
 
             if proc.poll() is not None:
-                # Do one final drain to ensure nothing is missed
-                try:
-                    while True:
-                        prefix, line = out_q.get_nowait()
+                t_out.join(timeout=0.1)
+                t_err.join(timeout=0.1)
+                while not q.empty():
+                    try:
+                        prefix, line = q.get_nowait()
                         st.session_state.repl_output += f"{prefix} {line}"
-                except queue.Empty:
-                    pass
-                output_placeholder.code(st.session_state.repl_output, language="text", height=785)
+                    except queue.Empty:
+                        break
                 break
 
             if (time.time() - start_time) > timeout_val:
                 st.session_state.repl_output += f"\n[TIMEOUT] Connection closed after {timeout_val}s (Script may still be running on MCU)\n"
-                output_placeholder.code(st.session_state.repl_output, language="text", height=785)
                 proc.terminate()
                 break
 
-            time.sleep(0.02)
+            time.sleep(0.05)
 
     except Exception as e:
         st.session_state.repl_output += f"[error] Process failed: {str(e)}\n"
