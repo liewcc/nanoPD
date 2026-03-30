@@ -21,81 +21,14 @@ if "repl_code_editor" not in st.session_state:
 if "repl_output" not in st.session_state:
     st.session_state.repl_output = ""
 
-if "repl_running" not in st.session_state:
-    st.session_state.repl_running = False
-
 if "repl_timeout" not in st.session_state:
-    st.session_state.repl_timeout = 30.0
+    st.session_state.repl_timeout = 30
+
+if "is_running" not in st.session_state:
+    st.session_state.is_running = False
 
 
 # ─── Helper Functions ───────────────────────────────────────────────────────
-def run_mpremote(args, timeout=30.0, soft_reset=False):
-    """Executes mpremote with a retry loop for Raw REPL entry."""
-    if soft_reset:
-        subprocess.run(
-            [sys.executable, "-m", "mpremote", "soft-reset"],
-            capture_output=True, creationflags=CREATIONFLAGS
-        )
-        time.sleep(0.5)
-
-    cmd = [sys.executable, "-m", "mpremote"] + args
-    max_retries = 3
-
-    for attempt in range(max_retries):
-        try:
-            res = subprocess.run(
-                cmd, capture_output=True, timeout=timeout,
-                creationflags=CREATIONFLAGS
-            )
-            stdout = res.stdout.decode('utf-8', errors='replace')
-            stderr = res.stderr.decode('utf-8', errors='replace')
-
-            if ("could not enter raw repl" in stderr.lower()
-                    or "failed to access" in stderr.lower()):
-                time.sleep(1.0)
-                continue
-
-            return res.returncode, stdout, stderr
-        except subprocess.TimeoutExpired as e:
-            # Handle timeout by capturing partial output
-            stdout = e.stdout.decode('utf-8', errors='replace') if e.stdout else ""
-            stderr = e.stderr.decode('utf-8', errors='replace') if e.stderr else ""
-            return -1, stdout, stderr
-        except Exception as e:
-            return -2, "", str(e)
-
-    return -3, "", "Failed to enter Raw REPL after retries."
-
-
-def execute_code(code: str, timeout: float):
-    """Send code to the MCU via mpremote exec and return formatted output."""
-    timestamp = time.strftime("%H:%M:%S")
-    # >> prefix for host commands
-    header = f"[{timestamp}] >> Run\n"
-
-    rc, stdout, stderr = run_mpremote(["exec", code], timeout=timeout)
-
-    output_parts = [header]
-    
-    # << prefix for MCU output lines
-    if stdout.strip():
-        for line in stdout.splitlines():
-            output_parts.append(f"<< {line}")
-            
-    if stderr.strip():
-        for line in stderr.splitlines():
-            output_parts.append(f"[stderr] {line}")
-            
-    if rc == -1:
-        output_parts.append(f"\n[TIMEOUT] Connection closed after {timeout}s (Script may still be running on MCU)")
-    elif rc != 0 and not stderr.strip():
-        output_parts.append(f"[error] Exit code: {rc}")
-    elif rc == 0 and not stdout.strip() and not stderr.strip():
-        output_parts.append("<< (no output)")
-
-    return "\n".join(output_parts) + "\n"
-
-
 def load_file_dialog():
     """Opens a native file dialog and returns the selected file path."""
     root = tk.Tk()
@@ -134,16 +67,7 @@ def save_file_dialog(content: str):
     return None
 
 
-# ─── Callbacks (Handle state BEFORE UI rendering) ─────────────
-def handle_run():
-    code = st.session_state.repl_code_editor.strip()
-    timeout = st.session_state.repl_timeout
-    if code:
-        result = execute_code(code, timeout)
-        st.session_state.repl_output += result
-    else:
-        st.toast("No code to run.", icon="⚠️")
-
+# ─── Callbacks (Handle state & blocking IO) ─────────────
 def handle_save():
     content = st.session_state.repl_code_editor
     saved_path = save_file_dialog(content)
@@ -157,8 +81,7 @@ def handle_load():
     if file_path:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-                st.session_state.repl_code_editor = content
+                st.session_state.repl_code_editor = f.read()
             st.toast(f"Loaded {os.path.basename(file_path)}", icon="✅")
         except Exception as e:
             st.toast(f"Failed to load: {e}", icon="❌")
@@ -167,6 +90,10 @@ def handle_load():
 
 def handle_clear():
     st.session_state.repl_output = ""
+
+def handle_run_toggle():
+    # Toggle state - script body handles the actual process management
+    st.session_state.is_running = not st.session_state.is_running
 
 
 # ─── Apply Global CSS ───────────────────────────────────────────────────────
@@ -214,7 +141,7 @@ connected = is_rp2350_connected()
 device_ready = connected and not mounted
 
 
-# ─── MAIN LAYOUT — Two columns matching UI calibration sandbox ──────────────
+# ─── MAIN LAYOUT ────────────────────────────────────────────────────────────
 col_code, col_output = st.columns([1, 1])
 
 with col_code:
@@ -222,12 +149,18 @@ with col_code:
     with st.container(border=True):
         ab1, ab2, ab3, ab4 = st.columns(4)
         with ab1:
-            st.button(
-                "🚀 Run Code", width="stretch",
-                disabled=not device_ready,
-                help=None if device_ready else "Device not ready",
-                on_click=handle_run
-            )
+            if not st.session_state.is_running:
+                st.button(
+                    "🚀 Run REPL", width="stretch", type="primary",
+                    disabled=not device_ready,
+                    help=None if device_ready else "Device not ready",
+                    on_click=handle_run_toggle
+                )
+            else:
+                st.button(
+                    "🛑 Stop REPL", width="stretch", type="secondary",
+                    on_click=handle_run_toggle
+                )
         with ab2:
             st.button("💾 Save to Local", width="stretch", on_click=handle_save)
         with ab3:
@@ -235,15 +168,25 @@ with col_code:
         with ab4:
             st.button("🗑️ Clear Output", width="stretch", on_click=handle_clear)
         
-        # Timeout Configuration
-        st.number_input(
-            "Timeout (seconds)",
-            min_value=1.0,
-            max_value=3600.0,
-            step=1.0,
-            key="repl_timeout",
-            help="Maximum time to wait for a script to finish before timing out host-side."
-        )
+        # Timeout Configuration Columns
+        st.markdown('<p class="metric-label" style="margin:8px 0 0 0">TIMEOUT (SECONDS)</p>', unsafe_allow_html=True)
+        t_col1, t_col2 = st.columns([1, 1.8])
+        with t_col1:
+            # Side-by-side Number Input
+            st.number_input(
+                "Timeout Number",
+                min_value=1, max_value=3600, step=1,
+                label_visibility="collapsed",
+                key="repl_timeout"
+            )
+        with t_col2:
+            # Side-by-side Slider
+            st.slider(
+                "Timeout Slider",
+                min_value=1, max_value=600, step=1,
+                label_visibility="collapsed",
+                key="repl_timeout" # Shared key for dual-binding
+            )
 
     # Coding container
     with st.container(height=714, border=True):
@@ -251,23 +194,107 @@ with col_code:
             '<p class="metric-label" style="margin:0 0 12px 0">CODING</p>',
             unsafe_allow_html=True
         )
-
         st.text_area(
             "Code Editor",
-            height=650,
+            height=660,
             label_visibility="collapsed",
             key="repl_code_editor"
         )
 
+# ─── NON-BLOCKING EXECUTION ENGINE ───────────────────────────────────────── (In the output column)
 with col_output:
-    with st.container(height=852, border=True):
+    output_container = st.container(height=852, border=True)
+    with output_container:
         st.markdown(
             '<p class="metric-label" style="margin:0 0 12px 0">MCU OUTPUT</p>',
             unsafe_allow_html=True
         )
+        
+        # This area will display the output code block
+        # We use a placeholder that will be updated in a loop if running
+        output_placeholder = st.empty()
 
-        st.code(
+        # Render the current buffer immediately
+        output_placeholder.code(
             st.session_state.repl_output if st.session_state.repl_output else "(waiting for execution...)",
-            language="text",
-            height=785
+            language="text"
         )
+
+# ─── RUN ENGINE (Executed if is_running was just set to True) ─────────────
+if st.session_state.is_running:
+    code_to_run = st.session_state.repl_code_editor.strip()
+    timeout_val = st.session_state.repl_timeout
+    
+    if not code_to_run:
+        st.toast("No code to run.", icon="⚠️")
+        st.session_state.is_running = False
+        st.rerun()
+
+    timestamp = time.strftime("%H:%M:%S")
+    st.session_state.repl_output += f"[{timestamp}] >> Run\n"
+    
+    # Refresh the display with the new header
+    output_placeholder.code(st.session_state.repl_output, language="text")
+
+    # Start Popen process
+    cmd = [sys.executable, "-m", "mpremote", "exec", code_to_run]
+    try:
+        proc = subprocess.Popen(
+            cmd, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.PIPE, 
+            text=True, 
+            bufsize=1, 
+            creationflags=CREATIONFLAGS
+        )
+        
+        start_time = time.time()
+        
+        # Poll the process
+        while True:
+            # 1. Check if user clicked "Stop" (This is tricky - another click triggers rerun)
+            # In Streamlit, a rerun while in this loop would kill this script execution instance.
+            # However, we'll check if the process is done or if timeout reached.
+            
+            # Non-blocking read of stdout
+            import selectors
+            sel = selectors.DefaultSelector()
+            sel.register(proc.stdout, selectors.EVENT_READ)
+            sel.register(proc.stderr, selectors.EVENT_READ)
+            
+            events = sel.select(timeout=0.1)
+            for key, mask in events:
+                line = key.fileobj.readline()
+                if line:
+                    prefix = "<<" if key.fileobj is proc.stdout else "[stderr]"
+                    st.session_state.repl_output += f"{prefix} {line}"
+                    # Update live display
+                    output_placeholder.code(st.session_state.repl_output, language="text")
+
+            # Check if finished
+            if proc.poll() is not None:
+                # Get remaining output
+                remaining_stdout, remaining_stderr = proc.communicate()
+                if remaining_stdout:
+                    for l in remaining_stdout.splitlines():
+                        st.session_state.repl_output += f"<< {l}\n"
+                if remaining_stderr:
+                    for l in remaining_stderr.splitlines():
+                        st.session_state.repl_output += f"[stderr] {l}\n"
+                break
+
+            # Check timeout
+            if (time.time() - start_time) > timeout_val:
+                st.session_state.repl_output += f"\n[TIMEOUT] Connection closed after {timeout_val}s (Script may still be running on MCU)\n"
+                proc.terminate()
+                break
+
+            # Small sleep to yield to UI/OS
+            time.sleep(0.01)
+
+    except Exception as e:
+        st.session_state.repl_output += f"[error] Process failed: {str(e)}\n"
+    
+    # Mark as finished
+    st.session_state.is_running = False
+    st.rerun() # Refresh to reset buttons
