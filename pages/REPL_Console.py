@@ -19,9 +19,6 @@ if "ui_cfg" not in st.session_state:
 if "repl_code" not in st.session_state:
     st.session_state.repl_code = "# Write your MicroPython code here\nprint('Hello from NanoPD!')\n"
 
-if "repl_code_editor" not in st.session_state:
-    st.session_state.repl_code_editor = st.session_state.repl_code
-
 if "repl_output" not in st.session_state:
     st.session_state.repl_output = ""
 
@@ -77,7 +74,8 @@ def save_file_dialog(content: str):
 # ─── Callbacks ──────────────────────────────────────────────────────────────
 def handle_save():
     # Read the latest content from the widget key before it disappears
-    content = st.session_state.get("repl_code_editor", st.session_state.repl_code)
+    dynamic_key = f"repl_code_editor_{st.session_state.ace_version}"
+    content = st.session_state.get(dynamic_key, st.session_state.repl_code)
     saved_path = save_file_dialog(content)
     if saved_path:
         st.toast(f"Saved to {os.path.basename(saved_path)}", icon="✅")
@@ -104,10 +102,6 @@ def handle_clear():
 
 def handle_run_toggle():
     st.session_state.is_running = not st.session_state.is_running
-
-def sync_code_to_state():
-    """Syncs the widget key back to the persistent state on every edit."""
-    st.session_state.repl_code = st.session_state.repl_code_editor
 
 def sync_from_num():
     st.session_state.repl_timeout = st.session_state.timeout_num
