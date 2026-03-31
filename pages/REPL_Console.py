@@ -140,7 +140,7 @@ st.markdown(f"""
 
         /* ── Left Column: CODING container (nth-child 3, after 1=buttons, 2=label) ── */
         [data-testid="column"]:nth-of-type(1) .element-container:nth-child(3) [data-testid="stVerticalBlockBorderWrapper"] {{
-            height: calc(100vh - 290px) !important;
+            height: calc(100vh - 330px) !important;
             overflow-y: auto !important;
         }}
 
@@ -228,7 +228,7 @@ with col_code:
             show_print_margin=False,
             wrap=True,
             auto_update=True,
-            height=600,
+            height=580,
             font_size=14,
             key=f"repl_code_editor_{st.session_state.ace_version}"
         )
@@ -249,6 +249,47 @@ with col_output:
             height=785
         )
 
+
+# ─── JS ALIGNMENT: Sync CODING container bottom to MCU Output bottom ─────────
+import streamlit.components.v1 as components
+components.html(
+    """
+    <script>
+    function alignCodingToMCU() {
+        var doc = window.parent.document;
+        var wrappers = Array.from(doc.querySelectorAll('[data-testid="stVerticalBlockBorderWrapper"]'));
+        if (wrappers.length < 2) return;
+
+        // CODING container = the one containing the ace editor iframe
+        var codingEl = null;
+        var mcuEl = null;
+        wrappers.forEach(function(w) {
+            if (w.querySelector('iframe')) { codingEl = w; }
+        });
+        // MCU container = the tallest non-coding bordered wrapper
+        wrappers.forEach(function(w) {
+            if (w !== codingEl) {
+                if (!mcuEl || w.getBoundingClientRect().height > mcuEl.getBoundingClientRect().height) {
+                    mcuEl = w;
+                }
+            }
+        });
+        if (!codingEl || !mcuEl) return;
+
+        var mcuBottom = mcuEl.getBoundingClientRect().bottom;
+        var codingTop = codingEl.getBoundingClientRect().top;
+        var newHeight = Math.max(100, mcuBottom - codingTop);
+        codingEl.style.height = newHeight + 'px';
+        codingEl.style.overflowY = 'auto';
+    }
+    alignCodingToMCU();
+    setTimeout(alignCodingToMCU, 400);
+    setTimeout(alignCodingToMCU, 1000);
+    </script>
+    """,
+    height=0,
+    width=0
+)
 
 # ─── NON-BLOCKING EXECUTION ENGINE ─────────────────────────────────────────
 if st.session_state.is_running:
