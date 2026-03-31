@@ -34,53 +34,85 @@ if "ace_version" not in st.session_state:
 
 # ─── Helper Functions ───────────────────────────────────────────────────────
 def load_file_dialog():
-    """Opens a native file dialog and returns the selected file path."""
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes('-topmost', True)
-    root.lift()
-    root.focus_force()
-    selected_file = filedialog.askopenfilename(
-        title="Select MicroPython File",
-        filetypes=[("Python Files", "*.py"), ("All Files", "*.*")]
-    )
-    root.destroy()
-    return selected_file
+    """Opens a native file dialog via subprocess to avoid Tkinter threading crashes."""
+    script = """
+import tkinter as tk
+from tkinter import filedialog
+root = tk.Tk()
+root.withdraw()
+root.attributes('-topmost', True)
+root.lift()
+root.focus_force()
+f = filedialog.askopenfilename(title="Select MicroPython File", filetypes=[("Python Files", "*.py"), ("All Files", "*.*")])
+if f:
+    print(f)
+"""
+    try:
+        result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+        path = result.stdout.strip()
+        return path if path else None
+    except Exception:
+        return None
 
 
 def save_file_dialog(content: str):
-    """Opens a native save dialog and writes content to the selected path."""
+    """Opens a native save dialog via subprocess and writes content to the selected path."""
+    script = """
+import tkinter as tk
+from tkinter import filedialog
+import sys
+
+try:
     root = tk.Tk()
     root.withdraw()
     root.attributes('-topmost', True)
     root.lift()
     root.focus_force()
-    selected_file = filedialog.asksaveasfilename(
-        title="Save MicroPython File",
-        defaultextension=".py",
-        filetypes=[("Python Files", "*.py"), ("All Files", "*.*")]
-    )
-    root.destroy()
-    if selected_file:
-        try:
-            with open(selected_file, "w", encoding="utf-8") as f:
+    f = filedialog.asksaveasfilename(title="Save MicroPython File", defaultextension=".py", filetypes=[("Python Files", "*.py"), ("All Files", "*.*")])
+    if f:
+        print(f)
+    else:
+        print("CANCELLED")
+except Exception as e:
+    print(f"TK_ERROR: {e}")
+"""
+    try:
+        result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=60)
+        out = result.stdout.strip()
+        if out == "CANCELLED" or not out:
+            return None, "File dialog was cancelled."
+        if out.startswith("TK_ERROR:"):
+            return None, f"Tkinter failed: {out}"
+        if result.returncode != 0:
+            return None, f"Subprocess failed: {result.stderr}"
+
+        path = out.split("\n")[-1].strip()  # In case there's extra print lines
+        if path:
+            with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
-            return selected_file
-        except Exception:
-            return None
-    return None
+            return path, "Success"
+        return None, "Unknown error during save."
+    except subprocess.TimeoutExpired:
+        return None, "Save dialog timed out!"
+    except Exception as e:
+        return None, str(e)
 
 
 # ─── Callbacks ──────────────────────────────────────────────────────────────
 def handle_save():
     # Read the latest content from the widget key before it disappears
     dynamic_key = f"repl_code_editor_{st.session_state.ace_version}"
-    content = st.session_state.get(dynamic_key, st.session_state.repl_code)
-    saved_path = save_file_dialog(content)
+    content = st.session_state.get(dynamic_key)
+    
+    # If the widget hasn't fully synced or returned None, use the persistent code state
+    if content is None:
+        content = st.session_state.get("repl_code", "")
+        
+    saved_path, err_msg = save_file_dialog(content)
     if saved_path:
         st.toast(f"Saved to {os.path.basename(saved_path)}", icon="✅")
     else:
-        st.toast("Save cancelled.", icon="ℹ️")
+        st.toast(f"Save failed/cancelled: {err_msg}", icon="⚠️")
 
 def handle_load():
     file_path = load_file_dialog()
@@ -127,27 +159,45 @@ code_lh = st.session_state.ui_cfg.get("code_lh", "1.3")
 
 st.markdown(f"""
     <style>
-        /* ── Left Column: Buttons+Timeout container (nth-child 1) ── reset to auto */
-        [data-testid="column"]:nth-of-type(1) .element-container:nth-child(1) [data-testid="stVerticalBlockBorderWrapper"] {{
-            height: auto !important;
-        }}
-
-        /* ── Left Column: CODING container (nth-child 3, after 1=buttons, 2=label) ── */
-        [data-testid="column"]:nth-of-type(1) .element-container:nth-child(3) [data-testid="stVerticalBlockBorderWrapper"] {{
-            height: calc(100vh - 330px) !important;
-            overflow-y: auto !important;
-        }}
-
-        /* ── Right Column: MCU OUTPUT ── */
-        [data-testid="column"]:nth-of-type(2) [data-testid="stVerticalBlockBorderWrapper"] {{
-            height: calc(100vh - 125px) !important;
-            overflow-y: hidden !important;
-        }}
-
-        .repl-output-block pre code {{
+        .repl-output-block pre code,
+        div[data-testid="stTextArea"] textarea {{
             font-family: {code_font} !important;
             font-size: {code_size} !important;
             line-height: {code_lh} !important;
+        }}
+
+        /* ─── VIEWPORT BOTTOM PADDING ─── */
+        /* Ensures exactly 20px (A) gap from the bottom of the browser viewport */
+        section[data-testid="stMain"] > div {{
+            padding-bottom: 20px !important;
+        }}
+        div[data-testid="block-container"] {{
+            padding-bottom: 20px !important;
+        }}
+
+        /* Strip column wrapper spacing so static heights control the gap precisely */
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {{
+            padding-bottom: 0 !important;
+            margin-bottom: 0 !important;
+        }}
+
+        /* Hide unwanted vertical scrollbars on the main fixed-height containers */
+        /* Targets the container wrappers without breaking the internal iframe/textarea scrolling */
+        div[data-testid="stVerticalBlock"]:has(.layout-coding-marker),
+        div[data-testid="stVerticalBlock"]:has(.layout-mcu-marker) {{
+            overflow-y: hidden !important;
+            scrollbar-width: none !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(.layout-coding-marker)::-webkit-scrollbar,
+        div[data-testid="stVerticalBlock"]:has(.layout-mcu-marker)::-webkit-scrollbar {{
+            display: none !important;
+            width: 0 !important;
+        }}
+
+        /* LOCK internal dynamic components to prevent collapse during execution loop rerenders */
+        div[data-testid="stVerticalBlock"]:has(.layout-mcu-marker) div[data-testid="stTextArea"] textarea {{
+            height: 763px !important;
+            resize: none !important;
         }}
     </style>
 """, unsafe_allow_html=True)
@@ -208,8 +258,9 @@ with col_code:
                 on_change=sync_from_slider
             )
 
-    # Coding container (B) with border
-    with st.container(border=True):
+    # Coding container (B) — height = VH(951) - top(278) - A(20) = 653px
+    with st.container(height=653, border=True):
+        st.markdown('<div class="layout-coding-marker" style="display:none;"></div>', unsafe_allow_html=True)
         st.markdown(
             '<p class="metric-label" style="margin:0 0 12px 0">CODING</p>',
             unsafe_allow_html=True
@@ -222,7 +273,7 @@ with col_code:
             show_print_margin=False,
             wrap=True,
             auto_update=True,
-            height=580,
+            height=568,
             font_size=14,
             key=f"repl_code_editor_{st.session_state.ace_version}"
         )
@@ -231,59 +282,20 @@ with col_code:
             st.session_state.repl_code = ace_content
 
 with col_output:
-    with st.container(border=True):
+    with st.container(height=843, border=True):  # height = VH(951) - top(88) - A(20) = 843px
+        st.markdown('<div class="layout-mcu-marker" style="display:none;"></div>', unsafe_allow_html=True)
         st.markdown(
             '<p class="metric-label" style="margin:0 0 12px 0">MCU OUTPUT</p>',
             unsafe_allow_html=True
         )
         output_placeholder = st.empty()
-        output_placeholder.code(
-            st.session_state.repl_output if st.session_state.repl_output else "(waiting for execution...)",
-            language="text",
-            height=785
+        output_placeholder.text_area(
+            "MCU Output Logs",
+            value=st.session_state.repl_output.rstrip('\n') if st.session_state.repl_output else "(waiting for execution...)",
+            height=763,
+            label_visibility="collapsed",
+            disabled=False
         )
-
-
-# ─── JS ALIGNMENT: Sync CODING container bottom to MCU Output bottom ─────────
-import streamlit.components.v1 as components
-components.html(
-    """
-    <script>
-    function alignCodingToMCU() {
-        var doc = window.parent.document;
-        var wrappers = Array.from(doc.querySelectorAll('[data-testid="stVerticalBlockBorderWrapper"]'));
-        if (wrappers.length < 2) return;
-
-        // CODING container = the one containing the ace editor iframe
-        var codingEl = null;
-        var mcuEl = null;
-        wrappers.forEach(function(w) {
-            if (w.querySelector('iframe')) { codingEl = w; }
-        });
-        // MCU container = the tallest non-coding bordered wrapper
-        wrappers.forEach(function(w) {
-            if (w !== codingEl) {
-                if (!mcuEl || w.getBoundingClientRect().height > mcuEl.getBoundingClientRect().height) {
-                    mcuEl = w;
-                }
-            }
-        });
-        if (!codingEl || !mcuEl) return;
-
-        var mcuBottom = mcuEl.getBoundingClientRect().bottom;
-        var codingTop = codingEl.getBoundingClientRect().top;
-        var newHeight = Math.max(100, mcuBottom - codingTop);
-        codingEl.style.height = newHeight + 'px';
-        codingEl.style.overflowY = 'auto';
-    }
-    alignCodingToMCU();
-    setTimeout(alignCodingToMCU, 400);
-    setTimeout(alignCodingToMCU, 1000);
-    </script>
-    """,
-    height=0,
-    width=0
-)
 
 # ─── NON-BLOCKING EXECUTION ENGINE ─────────────────────────────────────────
 if st.session_state.is_running:
@@ -296,7 +308,15 @@ if st.session_state.is_running:
         st.rerun()
 
     st.session_state.repl_output += ">> Run\n"
-    output_placeholder.code(st.session_state.repl_output, language="text", height=785)
+    init_display_lines = st.session_state.repl_output.splitlines()[-42:]
+    output_placeholder.text_area(
+        "MCU Output Logs",
+        value="\n".join(init_display_lines),
+        height=763,
+        label_visibility="collapsed",
+        disabled=False,
+        key="mcu_run_init"
+    )
 
     cmd = [sys.executable, "-m", "mpremote", "exec", code_to_run]
     try:
@@ -326,6 +346,7 @@ if st.session_state.is_running:
         t_out.start()
         t_err.start()
 
+        loop_counter = 0
         while True:
             updated = False
             while not q.empty():
@@ -337,9 +358,19 @@ if st.session_state.is_running:
                     break
             
             if updated:
-                # Keep only the last 42 lines for display during the loop to simulate an auto-rolling terminal
+                # Keep exactly ~42 lines (a very safe fit for 763px height).
+                # This guarantees the text bounds will NEVER overflow the container and spawn a native scrollbar,
+                # ensuring that remounting via key doesn't reset the viewport to hide the latest bottom lines.
                 display_lines = st.session_state.repl_output.splitlines()[-42:]
-                output_placeholder.code("\n".join(display_lines), language="text", height=785)
+                output_placeholder.text_area(
+                    "MCU Output Logs",
+                    value="\n".join(display_lines),
+                    height=763,
+                    label_visibility="collapsed",
+                    disabled=False,
+                    key=f"mcu_loop_{loop_counter}"
+                )
+                loop_counter += 1
 
             if proc.poll() is not None:
                 t_out.join(timeout=0.1)
@@ -369,21 +400,25 @@ if st.session_state.is_running:
 if not st.session_state.is_running and st.session_state.repl_output:
     import streamlit.components.v1 as components
     components.html(
-        """
+        f"""
+        <!-- Force Re-evaluation: {time.time()} -->
         <script>
-        function scrollToBottom() {
-            var codes = window.parent.document.querySelectorAll('pre code');
-            if (codes.length > 0) {
-                var codeContainer = codes[codes.length - 1].parentNode.parentNode;
-                if (codeContainer) {
-                    codeContainer.scrollTop = codeContainer.scrollHeight;
-                }
-            }
-        }
-        scrollToBottom();
-        window.addEventListener('load', scrollToBottom);
-        setTimeout(scrollToBottom, 100);
-        setTimeout(scrollToBottom, 500);
+        function scrollToBottom() {{
+            var parentDoc = window.parent.document;
+            var markers = parentDoc.querySelectorAll('.layout-mcu-marker');
+            if (markers.length > 0) {{
+                var block = markers[0].closest('[data-testid="stVerticalBlock"]');
+                if (block) {{
+                    var ta = block.querySelector('textarea');
+                    if (ta) {{
+                        ta.scrollTop = ta.scrollHeight;
+                    }}
+                }}
+            }}
+        }}
+        // Poll aggressively for 1.5 seconds to ensure Streamlit's delayed DOM render is caught
+        var scrollInterval = setInterval(scrollToBottom, 50);
+        setTimeout(function() {{ clearInterval(scrollInterval); }}, 1500);
         </script>
         """,
         height=0,

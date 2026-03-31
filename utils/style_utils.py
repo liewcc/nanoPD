@@ -101,6 +101,22 @@ def get_global_styles(
     ::-webkit-scrollbar-thumb:hover {{
         background: #cbd5e1;
     }}
+
+    /* GLOBAL FIX: Reduce Streamlit's large default bottom padding on the main content area (C = 20px) */
+    section[data-testid="stMain"] > div {{
+        padding-bottom: 20px !important;
+    }}
+    div[data-testid="block-container"] {{
+        padding-bottom: 20px !important;
+    }}
+
+    /* GLOBAL FIX: Remove extra margin below st.markdown elements to ensure uniform inner padding (B = A) */
+    [data-testid="stMarkdownContainer"] {{
+        margin-bottom: 0 !important;
+    }}
+    [data-testid="stMarkdownContainer"] > p:last-child {{
+        margin-bottom: 0 !important;
+    }}
     """
 
 def apply_global_css(

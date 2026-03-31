@@ -31,6 +31,12 @@ apply_global_css(
 # 4. Page Specific CSS
 st.markdown(f"""
 <style>
+    /* Force left and right containers to fill screen up to C=~20px */
+    [data-testid="stVerticalBlockBorderWrapper"] {{
+        height: calc(100vh - 125px) !important;
+        overflow-y: auto !important;
+    }}
+
     .hex-terminal-large {{
         background: #ffffff;
         padding: 16px;
@@ -41,7 +47,7 @@ st.markdown(f"""
         color: #1e293b;
         overflow-x: auto;
         white-space: pre;
-        height: calc(100vh - 220px);
+        height: calc(100vh - 190px) !important;
         overflow-y: auto;
     }}
     .end-of-scan {{

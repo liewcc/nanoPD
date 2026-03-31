@@ -113,6 +113,12 @@ st.markdown("""
         border-radius: 2px;
         margin-right: 6px;
     }
+    
+    /* ── SRAM Grid Scrollable Wrapper ── */
+    [data-testid="stVerticalBlockBorderWrapper"]:has(.sram-grid-wrapper) {
+        height: calc(100vh - 215px) !important;
+        overflow-y: auto !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -245,4 +251,7 @@ def render_bank_details():
 
 # 9. Main Render
 render_global_overview()
-render_bank_details()
+
+with st.container(border=True):
+    st.markdown('<div class="sram-grid-wrapper"></div>', unsafe_allow_html=True)
+    render_bank_details()
