@@ -33,25 +33,32 @@ COLORS = [
 print("NanoPD 2.0 — LED Blink Test")
 print(f"  Mono LED : GPIO25")
 print(f"  NeoPixel : GPIO22 (data), GPIO23 (power)")
-print("Running...")
+print("Running... (Press CTRL-C in REPL to stop)")
 
-idx = 0
-while True:
-    # Toggle mono LED every cycle (heartbeat)
-    mono.toggle()
+try:
+    idx = 0
+    while True:
+        # Toggle mono LED every cycle (heartbeat)
+        mono.toggle()
 
-    # Set RGB to current color
-    np[0] = COLORS[idx]
-    np.write()
-    print(f"  RGB -> {COLORS[idx]}")
+        # Set RGB to current color
+        np[0] = COLORS[idx]
+        np.write()
+        print(f"  RGB -> {COLORS[idx]}")
 
-    time.sleep(0.5)
+        time.sleep(0.5)
 
-    # Turn off RGB briefly for blink effect
+        # Turn off RGB briefly for blink effect
+        np[0] = (0, 0, 0)
+        np.write()
+
+        time.sleep(0.2)
+
+        # Advance to next color
+        idx = (idx + 1) % len(COLORS)
+except KeyboardInterrupt:
+    print("\n[INFO] Interrupted by user. Cleaning up...")
+    mono.off()
     np[0] = (0, 0, 0)
     np.write()
-
-    time.sleep(0.2)
-
-    # Advance to next color
-    idx = (idx + 1) % len(COLORS)
+    print("[INFO] LED turned off. Ready.")

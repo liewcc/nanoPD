@@ -8,7 +8,7 @@ from tkinter import filedialog
 from pathlib import Path
 from utils.style_utils import apply_global_css
 from utils.config_utils import load_ui_config
-from utils.mount_utils import is_mounted, is_rp2350_connected, CREATIONFLAGS
+from utils.mount_utils import is_mounted, is_rp2350_connected, CREATIONFLAGS, kill_process_by_pid, cleanup_all_mpremote_processes
 from streamlit_ace import st_ace
 
 # ─── Session State Initialization ───────────────────────────────────────────
@@ -27,6 +27,9 @@ if "repl_timeout" not in st.session_state:
 
 if "is_running" not in st.session_state:
     st.session_state.is_running = False
+
+if "repl_pid" not in st.session_state:
+    st.session_state.repl_pid = None
 
 if "ace_version" not in st.session_state:
     st.session_state.ace_version = 0
@@ -133,7 +136,15 @@ def handle_clear():
     st.session_state.repl_output = ""
 
 def handle_run_toggle():
-    st.session_state.is_running = not st.session_state.is_running
+    # If currently running, we need to STOP it
+    if st.session_state.is_running:
+        if st.session_state.repl_pid:
+            kill_process_by_pid(st.session_state.repl_pid)
+            st.session_state.repl_pid = None
+        st.session_state.is_running = False
+        st.toast("REPL Stopped & Process Killed", icon="🛑")
+    else:
+        st.session_state.is_running = True
 
 def sync_from_num():
     st.session_state.repl_timeout = st.session_state.timeout_num
@@ -160,7 +171,8 @@ code_lh = st.session_state.ui_cfg.get("code_lh", "1.3")
 st.markdown(f"""
     <style>
         .repl-output-block pre code,
-        div[data-testid="stTextArea"] textarea {{
+        div[data-testid="stTextArea"] textarea,
+        div[data-testid="stCode"] code {{
             font-family: {code_font} !important;
             font-size: {code_size} !important;
             line-height: {code_lh} !important;
@@ -195,9 +207,18 @@ st.markdown(f"""
         }}
 
         /* LOCK internal dynamic components to prevent collapse during execution loop rerenders */
-        div[data-testid="stVerticalBlock"]:has(.layout-mcu-marker) div[data-testid="stTextArea"] textarea {{
-            height: 763px !important;
-            resize: none !important;
+        div[data-testid="stVerticalBlock"]:has(.layout-mcu-marker) [data-testid="stMarkdownContainer"] pre {{
+            height: 785px !important;
+            margin: 0 !important;
+            padding: 12px !important;
+            background-color: transparent !important;
+            border: none !important;
+            overflow: auto !important;
+            white-space: pre !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(.layout-mcu-marker) [data-testid="stMarkdownContainer"] pre code {{
+            background-color: transparent !important;
+            padding: 0 !important;
         }}
     </style>
 """, unsafe_allow_html=True)
@@ -289,13 +310,8 @@ with col_output:
             unsafe_allow_html=True
         )
         output_placeholder = st.empty()
-        output_placeholder.text_area(
-            "MCU Output Logs",
-            value=st.session_state.repl_output.rstrip('\n') if st.session_state.repl_output else "(waiting for execution...)",
-            height=763,
-            label_visibility="collapsed",
-            disabled=False
-        )
+        content = st.session_state.repl_output if st.session_state.repl_output else "(waiting for execution...)"
+        output_placeholder.markdown(f"```text\n{content}\n```")
 
 # ─── NON-BLOCKING EXECUTION ENGINE ─────────────────────────────────────────
 if st.session_state.is_running:
@@ -308,15 +324,13 @@ if st.session_state.is_running:
         st.rerun()
 
     st.session_state.repl_output += ">> Run\n"
-    init_display_lines = st.session_state.repl_output.splitlines()[-42:]
-    output_placeholder.text_area(
-        "MCU Output Logs",
-        value="\n".join(init_display_lines),
-        height=763,
-        label_visibility="collapsed",
-        disabled=False,
-        key="mcu_run_init"
+    display_text = '\n'.join(st.session_state.repl_output.splitlines()[-42:])
+    output_placeholder.markdown(
+        f"```text\n{display_text}\n```"
     )
+
+    # Proactive cleanup: kill any lingering mpremote processes before starting
+    cleanup_all_mpremote_processes()
 
     cmd = [sys.executable, "-m", "mpremote", "exec", code_to_run]
     try:
@@ -329,6 +343,8 @@ if st.session_state.is_running:
             bufsize=1,
             creationflags=CREATIONFLAGS
         )
+        # Record the PID so we can kill it if the user clicks Stop
+        st.session_state.repl_pid = proc.pid
 
         start_time = time.time()
         import threading
@@ -358,17 +374,12 @@ if st.session_state.is_running:
                     break
             
             if updated:
-                # Keep exactly ~42 lines (a very safe fit for 763px height).
+                # Keep exactly ~42 lines (a very safe fit for 785px height).
                 # This guarantees the text bounds will NEVER overflow the container and spawn a native scrollbar,
                 # ensuring that remounting via key doesn't reset the viewport to hide the latest bottom lines.
-                display_lines = st.session_state.repl_output.splitlines()[-42:]
-                output_placeholder.text_area(
-                    "MCU Output Logs",
-                    value="\n".join(display_lines),
-                    height=763,
-                    label_visibility="collapsed",
-                    disabled=False,
-                    key=f"mcu_loop_{loop_counter}"
+                display_text = '\n'.join(st.session_state.repl_output.splitlines()[-42:])
+                output_placeholder.markdown(
+                    f"```text\n{display_text}\n```"
                 )
                 loop_counter += 1
 
@@ -385,8 +396,9 @@ if st.session_state.is_running:
 
             if (time.time() - start_time) > timeout_val:
                 st.session_state.repl_output += f"\n>> [TIMEOUT] Connection closed after {timeout_val}s (Script may still be running on MCU)\n"
-                proc.terminate()
+                kill_process_by_pid(proc.pid)
                 break
+
 
             time.sleep(0.05)
 
@@ -394,6 +406,7 @@ if st.session_state.is_running:
         st.session_state.repl_output += f"[error] Process failed: {str(e)}\n"
 
     st.session_state.is_running = False
+    st.session_state.repl_pid = None
     st.rerun()
 
 # ─── AUTO-SCROLL POST-EXECUTION ─────────────────────────────────────────────
@@ -409,9 +422,9 @@ if not st.session_state.is_running and st.session_state.repl_output:
             if (markers.length > 0) {{
                 var block = markers[0].closest('[data-testid="stVerticalBlock"]');
                 if (block) {{
-                    var ta = block.querySelector('textarea');
-                    if (ta) {{
-                        ta.scrollTop = ta.scrollHeight;
+                    var pre = block.querySelector('pre');
+                    if (pre) {{
+                        pre.scrollTop = pre.scrollHeight;
                     }}
                 }}
             }}

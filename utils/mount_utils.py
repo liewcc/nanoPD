@@ -71,6 +71,33 @@ def stop_mount():
     if LOCK_FILE.exists():
         LOCK_FILE.unlink(missing_ok=True)
 
+def kill_process_by_pid(pid):
+    """Forcefully kills a process and its children by PID."""
+    if not pid:
+        return
+    try:
+        # psutil is cleaner for cross-platform, but since we're on Windows:
+        subprocess.run(['taskkill', '/F', '/T', '/PID', str(pid)], 
+                       creationflags=CREATIONFLAGS, capture_output=True)
+    except Exception:
+        pass
+
+def cleanup_all_mpremote_processes():
+    """Kills any running python processes that are executing 'mpremote'."""
+    try:
+        # Use PowerShell to find all python processes with 'mpremote' in command line
+        ps_cmd = ['powershell', '-NoProfile', '-Command', 
+                  "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | " 
+                  "Where-Object { $_.CommandLine -like '*mpremote*' } | "
+                  "Select-Object -ExpandProperty ProcessId"]
+        output = subprocess.check_output(ps_cmd, creationflags=CREATIONFLAGS, text=True).strip()
+        if output:
+            for pid in output.splitlines():
+                if pid.strip():
+                    kill_process_by_pid(pid.strip())
+    except Exception:
+        pass
+
 def startup_cleanup():
     """Kills any orphaned mpremote mount processes on system startup."""
     global _startup_cleanup_performed
@@ -81,24 +108,9 @@ def startup_cleanup():
     # 1. Try to kill the specific PID from the lock file
     stop_mount()
     
-    # 2. Aggressive cleanup: Kill any process that looks like 'mpremote mount'
-    try:
-        # This is a bit risky but requested by the user for 'releasing COM'
-        # Windows 11 removed wmic, so we use PowerShell
-        ps_cmd = ['powershell', '-NoProfile', '-Command', 
-                  "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Select-Object CommandLine, ProcessId"]
-        output = subprocess.check_output(ps_cmd, creationflags=CREATIONFLAGS).decode()
-        for line in output.splitlines():
-            if line and "mpremote" in line and "mount" in line:
-                parts = line.strip().split()
-                if parts:
-                    pid = parts[-1]
-                    try:
-                        subprocess.run(['taskkill', '/F', '/T', '/PID', pid], creationflags=CREATIONFLAGS)
-                    except:
-                        pass
-    except:
-        pass
+    # 2. Aggressive cleanup: Kill any process that looks like 'mpremote'
+    cleanup_all_mpremote_processes()
+
 
 def register_exit_handlers():
     """Ensures stop_mount is called when the application exits."""
