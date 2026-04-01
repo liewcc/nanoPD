@@ -171,8 +171,7 @@ code_lh = st.session_state.ui_cfg.get("code_lh", "1.3")
 st.markdown(f"""
     <style>
         .repl-output-block pre code,
-        div[data-testid="stTextArea"] textarea,
-        div[data-testid="stCode"] code {{
+        div[data-testid="stTextArea"] textarea {{
             font-family: {code_font} !important;
             font-size: {code_size} !important;
             line-height: {code_lh} !important;
@@ -207,18 +206,9 @@ st.markdown(f"""
         }}
 
         /* LOCK internal dynamic components to prevent collapse during execution loop rerenders */
-        div[data-testid="stVerticalBlock"]:has(.layout-mcu-marker) [data-testid="stMarkdownContainer"] pre {{
+        div[data-testid="stVerticalBlock"]:has(.layout-mcu-marker) div[data-testid="stTextArea"] textarea {{
             height: 785px !important;
-            margin: 0 !important;
-            padding: 12px !important;
-            background-color: transparent !important;
-            border: none !important;
-            overflow: auto !important;
-            white-space: pre !important;
-        }}
-        div[data-testid="stVerticalBlock"]:has(.layout-mcu-marker) [data-testid="stMarkdownContainer"] pre code {{
-            background-color: transparent !important;
-            padding: 0 !important;
+            resize: none !important;
         }}
     </style>
 """, unsafe_allow_html=True)
@@ -310,8 +300,13 @@ with col_output:
             unsafe_allow_html=True
         )
         output_placeholder = st.empty()
-        content = st.session_state.repl_output if st.session_state.repl_output else "(waiting for execution...)"
-        output_placeholder.markdown(f"```text\n{content}\n```")
+        output_placeholder.text_area(
+            "MCU Output Logs",
+            value=st.session_state.repl_output if st.session_state.repl_output else "(waiting for execution...)",
+            height=785,
+            label_visibility="collapsed",
+            disabled=False
+        )
 
 # ─── NON-BLOCKING EXECUTION ENGINE ─────────────────────────────────────────
 if st.session_state.is_running:
@@ -324,9 +319,14 @@ if st.session_state.is_running:
         st.rerun()
 
     st.session_state.repl_output += ">> Run\n"
-    display_text = '\n'.join(st.session_state.repl_output.splitlines()[-42:])
-    output_placeholder.markdown(
-        f"```text\n{display_text}\n```"
+    init_display_lines = st.session_state.repl_output.splitlines()[-42:]
+    output_placeholder.text_area(
+        "MCU Output Logs",
+        value="\n".join(init_display_lines),
+        height=785,
+        label_visibility="collapsed",
+        disabled=False,
+        key="mcu_run_init"
     )
 
     # Proactive cleanup: kill any lingering mpremote processes before starting
@@ -377,9 +377,14 @@ if st.session_state.is_running:
                 # Keep exactly ~42 lines (a very safe fit for 785px height).
                 # This guarantees the text bounds will NEVER overflow the container and spawn a native scrollbar,
                 # ensuring that remounting via key doesn't reset the viewport to hide the latest bottom lines.
-                display_text = '\n'.join(st.session_state.repl_output.splitlines()[-42:])
-                output_placeholder.markdown(
-                    f"```text\n{display_text}\n```"
+                display_lines = st.session_state.repl_output.splitlines()[-42:]
+                output_placeholder.text_area(
+                    "MCU Output Logs",
+                    value="\n".join(display_lines),
+                    height=785,
+                    label_visibility="collapsed",
+                    disabled=False,
+                    key=f"mcu_loop_{loop_counter}"
                 )
                 loop_counter += 1
 
@@ -422,9 +427,9 @@ if not st.session_state.is_running and st.session_state.repl_output:
             if (markers.length > 0) {{
                 var block = markers[0].closest('[data-testid="stVerticalBlock"]');
                 if (block) {{
-                    var pre = block.querySelector('pre');
-                    if (pre) {{
-                        pre.scrollTop = pre.scrollHeight;
+                    var ta = block.querySelector('textarea');
+                    if (ta) {{
+                        ta.scrollTop = ta.scrollHeight;
                     }}
                 }}
             }}
