@@ -74,7 +74,11 @@ col1, col2 = st.columns([1, 4])
 
 with col1:
     with st.container(border=True):
-        st.markdown('<p class="metric-label" style="margin:0 0 12px 0">SCAN CONTROL</p>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="layout-control-marker" style="display:none;"></div>'
+            '<p class="metric-label" style="margin:0 0 12px 0">SCAN CONTROL</p>',
+            unsafe_allow_html=True
+        )
         
         start_addr_str = st.text_input("Start Address (Hex)", key="boot_start_input", disabled=mounted or is_scanning)
         end_addr_str   = st.text_input("End Address (Hex)",   key="boot_end_input",   disabled=mounted or is_scanning)
@@ -88,7 +92,11 @@ with col1:
 
 with col2:
     with st.container(border=True):
-        st.markdown('<p class="metric-label" style="margin:0 0 12px 0">BOOT ROM HEX VIEW</p>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="layout-hex-marker" style="display:none;"></div>'
+            '<p class="metric-label" style="margin:0 0 12px 0">BOOT ROM HEX VIEW</p>',
+            unsafe_allow_html=True
+        )
         
         bootrom_raw = st.session_state.get("bootrom_data", "No data. Click 'SCAN BOOTROM' to begin.")
         data_html   = html.escape(bootrom_raw)
@@ -128,3 +136,5 @@ if is_scanning and not mounted:
         st.session_state["bootrom_data"] = f"Error: {str(e)}"
     st.session_state["bootrom_scanning"] = False
     st.rerun()
+
+st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)

@@ -72,7 +72,11 @@ col1, col2 = st.columns([1, 4])
 
 with col1:
     with st.container(border=True):
-        st.markdown('<p class="metric-label" style="margin:0 0 12px 0">OTP CONTROL</p>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="layout-control-marker" style="display:none;"></div>'
+            '<p class="metric-label" style="margin:0 0 12px 0">OTP CONTROL</p>',
+            unsafe_allow_html=True
+        )
         
         OTP_MODES = {
             "DATA (Corrected)": 0x40130000,
@@ -100,10 +104,13 @@ with col1:
         if st.button(button_label, type="primary", width="stretch", disabled=is_scanning or mounted or not connected):
             st.session_state["otp_scanning"] = True
             st.rerun()
-
 with col2:
     with st.container(border=True):
-        st.markdown(f'<p class="metric-label" style="margin:0 0 12px 0">OTP HEX VIEW | {selected_mode}</p>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="layout-hex-marker" style="display:none;"></div>'
+            f'<p class="metric-label" style="margin:0 0 12px 0">OTP HEX VIEW | {selected_mode}</p>',
+            unsafe_allow_html=True
+        )
         
         otp_raw = st.session_state.get("otp_data", "No data. Click 'SCAN OTP' to begin.")
         data_html = html.escape(otp_raw)
@@ -143,3 +150,5 @@ if is_scanning and not mounted:
         st.session_state["otp_data"] = f"Error: {str(e)}"
     st.session_state["otp_scanning"] = False
     st.rerun()
+
+st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)

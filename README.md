@@ -18,7 +18,7 @@
 
 # NanoPD 2.0
 
-**NanoPD 2.0** is an advanced debugging dashboard and control system designed specifically for the **Seeed Studio XIAO RP2350**. It provides a premium, Streamlit-based interface for microcontroller file management, real-time memory monitoring, peripheral bit-level analysis, and low-level hardware interaction.
+**NanoPD 2.0** is an advanced debugging dashboard and control system designed specifically for the **Seeed Studio XIAO RP2350**. It provides a premium, pixel-perfect Streamlit interface for microcontroller file management, real-time memory monitoring, peripheral bit-level analysis, and low-level hardware interaction.
 
 ---
 
@@ -41,7 +41,8 @@ This project is optimized for stability and ease of use. All Python dependencies
 
 ## ✨ Features
 
-- **Modern Multi-page UI**: Built with Streamlit 1.36+ and native navigation.
+- **Interactive REPL Console**: Real-time Python code execution, local file loading, and synchronized terminal output.
+- **Modern Multi-page UI**: Built with Streamlit 1.36+, native navigation, and standardized 20px bottom-anchored layout.
 - **MicroPython Filesystem Manager**: Push and Pull files directly from the MCU with interactive sync status.
 - **SRAM Hybrid Monitor**: Real-time 520KB memory visualization with 10-bank detail tracking.
 - **Peripheral Register Analyst**: Bit-level interactive grid for all RP2350 hardware registers using official SVD definitions.
