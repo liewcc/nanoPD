@@ -260,8 +260,8 @@ with col_code:
 
     # Coding container (B) — height = VH(951) - top(278) - A(20) = 653px
     with st.container(height=653, border=True):
-        st.markdown('<div class="layout-coding-marker" style="display:none;"></div>', unsafe_allow_html=True)
         st.markdown(
+            '<div class="layout-coding-marker" style="display:none;"></div>'
             '<p class="metric-label" style="margin:0 0 12px 0">CODING</p>',
             unsafe_allow_html=True
         )
@@ -283,8 +283,8 @@ with col_code:
 
 with col_output:
     with st.container(height=843, border=True):  # height = VH(951) - top(88) - A(20) = 843px
-        st.markdown('<div class="layout-mcu-marker" style="display:none;"></div>', unsafe_allow_html=True)
         st.markdown(
+            '<div class="layout-mcu-marker" style="display:none;"></div>'
             '<p class="metric-label" style="margin:0 0 12px 0">MCU OUTPUT</p>',
             unsafe_allow_html=True
         )

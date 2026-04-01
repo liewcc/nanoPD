@@ -386,7 +386,10 @@ st.markdown(f"""
         /* Tree-specific styling using :has() to restrict to tree containers */
         div:has(> .element-container .custom-tree-wrapper) {{
             gap: 0 !important;
-            padding: 4px 12px !important;
+            padding-top: 15px !important;
+            padding-bottom: 4px !important;
+            padding-left: 12px !important;
+            padding-right: 12px !important;
         }}
         div:has(> .element-container .custom-tree-wrapper) .stCheckbox {{
             min-height: 24px !important;
@@ -446,8 +449,11 @@ col_left, col_right1, col_right2 = st.columns([1, 1.2, 1.2])
 # Left: Control Container
 with col_left:
     with st.container(height=843, border=True):
-        st.markdown('<div class="layout-control-marker" style="display:none;"></div>', unsafe_allow_html=True)
-        st.markdown('<p class="metric-label" style="margin:0 0 12px 0">CONTROL</p>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="layout-control-marker" style="display:none;"></div>'
+            '<p class="metric-label" style="margin:0 0 12px 0">CONTROL</p>', 
+            unsafe_allow_html=True
+        )
         
         # Add Storage Gauge at the top
         storage_usage_gauge()
@@ -632,12 +638,12 @@ for p in {paths_json}: rm_rf('/' + p)
 with col_right1:
     with st.container(height=843, border=True):
         wrapper_class = "custom-tree-wrapper" if st.session_state["delete_mode"] else "custom-tree-wrapper readonly-tree-wrapper"
-        html = f"""
-        <div class="layout-local-marker" style="display:none;"></div>
-        <div class="{wrapper_class}" style="display:none;"></div>
-        <p class="metric-label" style="margin:0 0 12px 0">LOCAL</p>
-        """
-        st.markdown(html, unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="layout-local-marker" style="display:none;"></div>'
+            f'<div class="{wrapper_class}" style="display:none;"></div>'
+            '<p class="metric-label" style="margin:0 0 12px 0">LOCAL</p>',
+            unsafe_allow_html=True
+        )
         local_nodes = build_local_tree(st.session_state["xip_local_path"])
         render_ascii_tree(local_nodes, target="local", is_delete_mode=st.session_state["delete_mode"])
 
@@ -645,12 +651,12 @@ with col_right1:
 with col_right2:
     with st.container(height=843, border=True):
         wrapper_class = "custom-tree-wrapper" if st.session_state["delete_mode"] else "custom-tree-wrapper readonly-tree-wrapper"
-        html = f"""
-        <div class="layout-mcu-marker" style="display:none;"></div>
-        <div class="{wrapper_class}" style="display:none;"></div>
-        <p class="metric-label" style="margin:0 0 12px 0">MCU FLASH</p>
-        """
-        st.markdown(html, unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="layout-mcu-marker" style="display:none;"></div>'
+            f'<div class="{wrapper_class}" style="display:none;"></div>'
+            '<p class="metric-label" style="margin:0 0 12px 0">MCU FLASH</p>',
+            unsafe_allow_html=True
+        )
         mcu_nodes = None
         if not mounted and is_rp2350_connected():
             mcu_nodes = build_mcu_tree()
