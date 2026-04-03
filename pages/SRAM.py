@@ -167,7 +167,7 @@ def render_global_overview():
     st_pct   = (stack_bytes / total) * 100
     
     with st.container(border=True):
-        st.markdown("<p class='metric-label' style='margin-bottom:8px;'>GLOBAL SRAM USAGE (520KB)</p>", unsafe_allow_html=True)
+        st.markdown("<p class='metric-label' style='margin:0 0 8px 0;'>GLOBAL SRAM USAGE (520KB)</p>", unsafe_allow_html=True)
         
         st.markdown(f"""
         <div class="sram-progress-container">
@@ -179,19 +179,21 @@ def render_global_overview():
         </div>
         """, unsafe_allow_html=True)
         
-        # Legend
+        # Legend and Last Scan merged to save vertical space
         l_html = f"""
-        <div style="display:flex; flex-wrap:wrap;">
-            <div class="legend-item"><div class="legend-box seg-fw"></div>FW: {fw_bytes//1024}KB</div>
-            <div class="legend-item"><div class="legend-box seg-heap"></div>HEAP: {heap_total//1024}KB</div>
-            <div class="legend-item"><div class="legend-box seg-phys"></div>PHYS: {phys_bytes//1024}KB</div>
-            <div class="legend-item"><div class="legend-box seg-dma"></div>DMA: {dma_bytes//1024}KB</div>
-            <div class="legend-item"><div class="legend-box seg-stack"></div>STACK: {stack_bytes//1024}KB</div>
-            <div class="legend-item"><div class="legend-box" style="background:#f1f5f9; border:1px solid #e2e8f0;"></div>FREE: {free_bytes//1024}KB</div>
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center;">
+            <div style="display:flex; flex-wrap:wrap;">
+                <div class="legend-item"><div class="legend-box seg-fw"></div>FW: {fw_bytes//1024}KB</div>
+                <div class="legend-item"><div class="legend-box seg-heap"></div>HEAP: {heap_total//1024}KB</div>
+                <div class="legend-item"><div class="legend-box seg-phys"></div>PHYS: {phys_bytes//1024}KB</div>
+                <div class="legend-item"><div class="legend-box seg-dma"></div>DMA: {dma_bytes//1024}KB</div>
+                <div class="legend-item"><div class="legend-box seg-stack"></div>STACK: {stack_bytes//1024}KB</div>
+                <div class="legend-item"><div class="legend-box" style="background:#f1f5f9; border:1px solid #e2e8f0;"></div>FREE: {free_bytes//1024}KB</div>
+            </div>
+            <div style='font-size:0.7rem; color:#94a3b8;'>Last scan: {time.strftime('%H:%M:%S')}</div>
         </div>
         """
         st.markdown(l_html, unsafe_allow_html=True)
-        st.markdown(f"<div style='text-align:right; font-size:0.7rem; color:#94a3b8;'>Last scan: {time.strftime('%H:%M:%S')}</div>", unsafe_allow_html=True)
 
 # 8. Bank Details Fragment
 @st.fragment(run_every="3s")
@@ -209,8 +211,7 @@ def render_bank_details():
     if banks:
         banks = compute_bank_segments(banks, detail)
     
-    st.markdown("<div style='margin-top:1.5rem;'></div>", unsafe_allow_html=True)
-    st.markdown("<p class='metric-label' style='margin-bottom:12px;'>SRAM BANK DISTRIBUTION</p>", unsafe_allow_html=True)
+    st.markdown("<div class='sram-grid-wrapper'></div><p class='metric-label' style='margin:0 0 12px 0;'>SRAM BANK DISTRIBUTION</p>", unsafe_allow_html=True)
     
     def render_bank(bank):
         used = bank["used"]
@@ -253,5 +254,4 @@ def render_bank_details():
 render_global_overview()
 
 with st.container(border=True):
-    st.markdown('<div class="sram-grid-wrapper"></div>', unsafe_allow_html=True)
     render_bank_details()
