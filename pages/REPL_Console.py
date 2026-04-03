@@ -400,7 +400,7 @@ if st.session_state.is_running:
                 break
 
             if (time.time() - start_time) > timeout_val:
-                st.session_state.repl_output += f"\n>> [TIMEOUT] Connection closed after {timeout_val}s (Script may still be running on MCU)\n"
+                st.session_state.repl_output += f"\n>> [TIMEOUT] Connection closed after {timeout_val}s (Script may still be running on MCU)"
                 kill_process_by_pid(proc.pid)
                 break
 
