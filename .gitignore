@@ -1,0 +1,23 @@
+# [Python]
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+
+# [Streamlit]
+# Keep config.toml for themes, but ignore secrets.toml for security
+.streamlit/secrets.toml
+
+# [OS]
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# [Project specific]
+*.log
+.vscode/
+.cursorrules
+mcu/
+firmware/
+.agents/

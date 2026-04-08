@@ -1,0 +1,15 @@
+[theme]
+primaryColor = "#3b82f6"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f8fafc"
+textColor = "#0f172a"
+font = "sans serif"
+
+[server]
+# Enable headless mode
+headless = false
+
+[ui]
+# Use wide layout by default
+# Note: Streamlit uses 'wide' or 'centered'
+# layout = "wide"
