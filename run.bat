@@ -19,7 +19,7 @@ echo ^|                                                             ^|
 echo ^|                       NANOPD 2.0                            ^|
 echo ^|                                                             ^|
 echo +-------------------------------------------------------------+
-"%PYTHON_EXE%" -m streamlit run main.py
+"%~dp0.venv\Scripts\streamlit.exe" run main.py
 
 echo.
 echo ==========================================
