@@ -19,7 +19,7 @@ echo ^|                                                             ^|
 echo ^|                       NANOPD 2.0                            ^|
 echo ^|                                                             ^|
 echo +-------------------------------------------------------------+
-"%PYTHON_EXE%" launch.py
+"%~dp0.venv\Scripts\streamlit.exe" run main.py --server.port 8502
 
 echo.
 echo ==========================================
