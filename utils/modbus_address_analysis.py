@@ -89,66 +89,7 @@ def _save_csv():
             st.toast(f"Save failed: {e}", icon="❌")
 
 
-# ─── Styled Table Renderer ──────────────────────────────────────────────────
-_TYPE_COLORS = {
-    "Holding Register": ("#dbeafe", "#1e40af"),   # blue
-    "Input Register":   ("#dcfce7", "#166534"),   # green
-    "Coil":             ("#fef9c3", "#854d0e"),   # yellow
-    "Discrete Input":   ("#fce7f3", "#9d174d"),   # pink
-}
-
-def _render_table(data, headers):
-    """Build a custom HTML table matching the project's aesthetic."""
-    # Header row
-    header_cells = "".join(
-        f'<th style="padding:8px 12px;text-align:left;font-size:0.78rem;font-weight:700;'
-        f'text-transform:uppercase;letter-spacing:0.05em;color:#64748b;'
-        f'border-bottom:2px solid #e2e8f0;white-space:nowrap;">{h}</th>'
-        for h in headers
-    )
-
-    # Data rows
-    body_rows = []
-    for i, row in enumerate(data):
-        bg = "#ffffff" if i % 2 == 0 else "#f8fafc"
-        cells = []
-        for h in headers:
-            val = row.get(h, "")
-            cell_style = (
-                f"padding:6px 12px;font-size:0.82rem;border-bottom:1px solid #f1f5f9;"
-                f"color:#334155;white-space:nowrap;"
-            )
-            # Color-code the Type column
-            if h == "Type" and val in _TYPE_COLORS:
-                bg_c, fg_c = _TYPE_COLORS[val]
-                val = (
-                    f'<span style="background:{bg_c};color:{fg_c};padding:2px 8px;'
-                    f'border-radius:4px;font-size:0.75rem;font-weight:600;">{val}</span>'
-                )
-            # Color-code Access column
-            elif h == "Access":
-                if val == "RW":
-                    val = f'<span style="color:#7c3aed;font-weight:600;">{val}</span>'
-                elif val == "R":
-                    val = f'<span style="color:#0891b2;font-weight:600;">{val}</span>'
-            cells.append(f'<td style="{cell_style}">{val}</td>')
-        body_rows.append(f'<tr style="background:{bg};">{"".join(cells)}</tr>')
-
-    html = f"""
-    <div style="max-height:calc(100vh - 380px);overflow:auto;border:1px solid #e2e8f0;border-radius:8px;">
-        <table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;">
-            <thead style="position:sticky;top:0;background:#f8fafc;z-index:1;">
-                <tr>{header_cells}</tr>
-            </thead>
-            <tbody>
-                {"".join(body_rows)}
-            </tbody>
-        </table>
-    </div>
-    """
-    return html
-
-
+# ─── Removed Styled Table Renderer to use st.data_editor instead ───────────────
 # ─── Data Update from RX ────────────────────────────────────────────────────
 def update_from_rx(rx_data: bytes, start_addr: int, quantity: int, func_code: int):
     """Parses a Modbus RX payload and updates the loaded address map."""
@@ -285,7 +226,7 @@ def render():
             st.text_input(f"End Addr ({addr_format})", key="modbus_end_hex", placeholder="e.g. 0x05DC" if addr_format=="HEX" else "e.g. 1500")
 
         if st.session_state.modbus_render_list:
-            filtered_data = data
+            import pandas as pd
             s_str = st.session_state.modbus_applied_start.strip()
             e_str = st.session_state.modbus_applied_end.strip()
             
@@ -301,27 +242,49 @@ def render():
                 if e_str: e_val = int(e_str, base)
             except ValueError: pass
             
-            if s_val is not None or e_val is not None:
-                new_data = []
-                for row in data:
-                    addr_val = None
-                    try:
-                        addr_val = int(row.get("Addr", -1))
-                    except ValueError:
-                        pass
-                        
-                    if addr_val is not None:
-                        if s_val is not None and addr_val < s_val:
-                            continue
-                        if e_val is not None and addr_val > e_val:
-                            continue
-                    new_data.append(row)
-                filtered_data = new_data
+            # Build filtered view with original index mapping
+            filtered_indices = []
+            filtered_rows = []
+            for idx, row in enumerate(data):
+                addr_val = None
+                try:
+                    addr_val = int(row.get("Addr", -1))
+                except ValueError:
+                    pass
+                    
+                if addr_val is not None:
+                    if s_val is not None and addr_val < s_val:
+                        continue
+                    if e_val is not None and addr_val > e_val:
+                        continue
+                filtered_indices.append(idx)
+                # Make a copy to avoid mutating original data
+                filtered_rows.append(dict(row))
 
-
-
-            if filtered_data:
-                st.markdown(_render_table(filtered_data, headers), unsafe_allow_html=True)
+            if filtered_rows:
+                df = pd.DataFrame(filtered_rows).fillna("")
+                
+                edited_df = st.data_editor(
+                    df,
+                    width='stretch',
+                    height=540,
+                    num_rows="fixed",
+                    hide_index=True,
+                    key="modbus_data_editor"
+                )
+                
+                # Auto-sync edits back to session state so Save always has latest data
+                for i, orig_idx in enumerate(filtered_indices):
+                    if i < len(edited_df):
+                        updated_row = {}
+                        for h in headers:
+                            val = edited_df.iloc[i].get(h, "")
+                            if pd.isna(val):
+                                val = ""
+                            else:
+                                val = str(val)
+                            updated_row[h] = val
+                        st.session_state.modbus_csv_data[orig_idx] = updated_row
             else:
                 st.info("No registers match the specified address range.")
     else:
