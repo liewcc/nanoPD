@@ -531,9 +531,9 @@ with col_left:
         with fc_right:
             lb_col, sb_col = st.columns(2)
             with lb_col:
-                st.button("📂 Load", use_container_width=True, on_click=load_rs485_config)
+                st.button("📂 Load", width='stretch', on_click=load_rs485_config)
             with sb_col:
-                st.button("💾 Save", use_container_width=True, on_click=save_rs485_config)
+                st.button("💾 Save", width='stretch', on_click=save_rs485_config)
 
     # RS485 Parameters & Connection Controls
     with st.container(border=True):
@@ -626,7 +626,7 @@ with col_right:
             st.markdown('<div style="margin-top:4px;"></div>', unsafe_allow_html=True)
             log_format = st.radio("Log Format", ["HEX", "ASCII"], horizontal=True, label_visibility="collapsed", key="cfg_log_format")
         with btn_col:
-            st.button("🗑️ Clear", on_click=handle_clear, use_container_width=True)
+            st.button("🗑️ Clear", on_click=handle_clear, width='stretch')
         
         # Display logs
         output_placeholder = st.empty()

@@ -1,0 +1,19 @@
+{
+    "com_port": "COM3",
+    "protocol_mode": "Modbus RTU",
+    "baudrate": 9600,
+    "data_bits": 8,
+    "parity": "None",
+    "stop_bits": 1,
+    "func_code": "03 (Read Holding Registers)",
+    "device_id_hex": "0x01",
+    "device_id_dec": "1",
+    "start_addr_hex": "0x0000",
+    "start_addr_dec": "0",
+    "quantity": 45,
+    "timeout": 100,
+    "input_format": "HEX",
+    "line_ending": "\\r\\n (CRLF)",
+    "payload": "at",
+    "log_format": "ASCII"
+}
