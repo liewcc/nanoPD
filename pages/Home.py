@@ -3,6 +3,7 @@ import base64
 from PIL import Image
 from utils.style_utils import apply_global_css
 from utils.config_utils import load_ui_config
+import serial.tools.list_ports
 
 # 1. Load configuration and apply styles
 if "ui_cfg" not in st.session_state:
@@ -44,5 +45,31 @@ try:
 except Exception as e:
     st.error(f"Error loading logo: {e}")
 
-# 3. Empty Space
-st.markdown("<div style='height: 100px;'></div>", unsafe_allow_html=True)
+# COM ports section — auto-refresh every 3 seconds using @st.fragment
+@st.fragment(run_every=3)
+def com_ports_panel():
+    with st.container(border=True):
+        st.markdown(
+            """
+            <div class="layout-control-marker" style="display:none;"></div>
+            <p class="metric-label" style="margin:0 0 12px 0">COM PORTS</p>
+            """,
+            unsafe_allow_html=True,
+        )
+        ports = serial.tools.list_ports.comports()
+        if ports:
+            rows = []
+            for p in ports:
+                rows.append({
+                    "Device": p.device,
+                    "Description": p.description,
+                    "Manufacturer": getattr(p, "manufacturer", ""),
+                    "VID": f"{p.vid:#04x}" if p.vid else "",
+                    "PID": f"{p.pid:#04x}" if p.pid else "",
+                    "Serial": getattr(p, "serial_number", "")
+                })
+            st.table(rows)
+        else:
+            st.write("No COM ports detected.")
+
+com_ports_panel()

@@ -131,3 +131,39 @@ def is_rp2350_connected() -> bool:
     except Exception:
         pass
     return False
+
+
+def get_rp2350_port() -> str | None:
+    """Returns the COM port name (e.g. 'COM3') of the first detected RP2xxx device,
+    or None if no matching device is found.
+    """
+    try:
+        import serial.tools.list_ports
+        for port in serial.tools.list_ports.comports():
+            desc = (port.description or "").upper()
+            mfr  = (port.manufacturer or "").upper()
+            if "RP2" in desc or "RP2" in mfr or port.vid == 0x2E8A:
+                return port.device
+    except Exception:
+        pass
+    return None
+
+
+def send_ctrl_c_to_mcu(port: str, baud: int = 115200) -> bool:
+    """Opens the serial port directly with pyserial and sends two Ctrl+C bytes
+    to interrupt any running MicroPython script, then waits briefly for the
+    device to return to REPL prompt.  This bypasses mpremote's raw-REPL
+    negotiation and is reliable even when the MCU is stuck in a tight loop.
+
+    Returns True on success, False if the port could not be opened.
+    """
+    try:
+        import serial as _serial
+        with _serial.Serial(port, baud, timeout=1) as ser:
+            ser.write(b'\x03')   # Ctrl+C — interrupt running script
+            time.sleep(0.1)
+            ser.write(b'\x03')   # second Ctrl+C for reliability
+            time.sleep(0.5)      # give MicroPython time to reach idle prompt
+        return True
+    except Exception:
+        return False

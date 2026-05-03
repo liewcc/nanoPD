@@ -8,7 +8,7 @@ from tkinter import filedialog
 from pathlib import Path
 from utils.style_utils import apply_global_css
 from utils.config_utils import load_ui_config
-from utils.mount_utils import is_mounted, is_rp2350_connected, CREATIONFLAGS, kill_process_by_pid, cleanup_all_mpremote_processes
+from utils.mount_utils import is_mounted, is_rp2350_connected, get_rp2350_port, send_ctrl_c_to_mcu, CREATIONFLAGS, kill_process_by_pid, cleanup_all_mpremote_processes
 from streamlit_ace import st_ace
 
 # ─── Session State Initialization ───────────────────────────────────────────
@@ -329,10 +329,45 @@ if st.session_state.is_running:
         key="mcu_run_init"
     )
 
-    # Proactive cleanup: kill any lingering mpremote processes before starting
+    # ── Step 1: Kill any lingering mpremote processes ────────────────────────
     cleanup_all_mpremote_processes()
+    time.sleep(0.3)
 
-    cmd = [sys.executable, "-m", "mpremote", "exec", code_to_run]
+    # ── Step 2: Send Ctrl+C directly via pyserial to interrupt stuck scripts ──
+    # mpremote cannot enter raw REPL if the MCU is busy (e.g. tight print loop).
+    # Sending Ctrl+C (0x03) directly over the serial port bypasses mpremote and
+    # forces MicroPython back to the idle >>> prompt reliably.
+    mcu_port = get_rp2350_port()
+    if mcu_port:
+        st.session_state.repl_output += f">> Interrupting MCU on {mcu_port}...\n"
+        ok = send_ctrl_c_to_mcu(mcu_port)
+        if ok:
+            st.session_state.repl_output += ">> MCU interrupted, ready.\n"
+        else:
+            st.session_state.repl_output += "[warn] Could not send Ctrl+C — port may be busy.\n"
+    else:
+        st.session_state.repl_output += "[warn] RP2350 port not found, skipping interrupt.\n"
+
+    # Update display before launching exec
+    pre_display = st.session_state.repl_output.splitlines()[-42:]
+    output_placeholder.text_area(
+        "MCU Output Logs",
+        value="\n".join(pre_display),
+        height=785,
+        label_visibility="collapsed",
+        disabled=False,
+        key="mcu_pre_exec"
+    )
+
+    # ── Step 3: Execute the user's code ──────────────────────────────────────
+    import threading
+    import queue
+
+    if mcu_port:
+        cmd = [sys.executable, "-m", "mpremote", "connect", mcu_port, "exec", code_to_run]
+    else:
+        cmd = [sys.executable, "-m", "mpremote", "exec", code_to_run]
+    proc = None
     try:
         proc = subprocess.Popen(
             cmd,
@@ -343,13 +378,23 @@ if st.session_state.is_running:
             bufsize=1,
             creationflags=CREATIONFLAGS
         )
+    except Exception as launch_err:
+        st.session_state.repl_output += f"[error] Failed to launch mpremote: {launch_err}\n"
+        st.session_state.is_running = False
+        st.session_state.repl_pid = None
+        st.rerun()
+
+    if proc is None:
+        st.session_state.repl_output += "[error] Could not launch mpremote. Check device connection.\n"
+        st.session_state.is_running = False
+        st.session_state.repl_pid = None
+        st.rerun()
+
+    try:
         # Record the PID so we can kill it if the user clicks Stop
         st.session_state.repl_pid = proc.pid
 
         start_time = time.time()
-        import threading
-        import queue
-
         q = queue.Queue()
 
         def enqueue_output(out, prefix):
@@ -372,11 +417,8 @@ if st.session_state.is_running:
                     updated = True
                 except queue.Empty:
                     break
-            
+
             if updated:
-                # Keep exactly ~42 lines (a very safe fit for 785px height).
-                # This guarantees the text bounds will NEVER overflow the container and spawn a native scrollbar,
-                # ensuring that remounting via key doesn't reset the viewport to hide the latest bottom lines.
                 display_lines = st.session_state.repl_output.splitlines()[-42:]
                 output_placeholder.text_area(
                     "MCU Output Logs",
@@ -403,7 +445,6 @@ if st.session_state.is_running:
                 st.session_state.repl_output += f"\n>> [TIMEOUT] Connection closed after {timeout_val}s (Script may still be running on MCU)"
                 kill_process_by_pid(proc.pid)
                 break
-
 
             time.sleep(0.05)
 
