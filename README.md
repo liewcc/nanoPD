@@ -4,7 +4,7 @@
 
 ## 📍 Table of Contents
 
-- [🆕 Changelog (Bug Fixes & New Features)](CHANGELOG.md)
+- [🐛 Bug Fixes & ✨ New Features](CHANGELOG.md)
 - [🚀 Quick Start](#-quick-start-windows)
 - [✨ Features](#-features)
 - [📂 Project Structure](#-project-structure)

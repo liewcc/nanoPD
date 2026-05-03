@@ -1,4 +1,4 @@
-# 🆕 Changelog (Bug Fixes & New Features)
+# 🐛 Bug Fixes & ✨ New Features
 
 ## Latest Updates
 
