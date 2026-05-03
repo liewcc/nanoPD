@@ -1,4 +1,5 @@
 {
+    "com_port": "COM3",
     "protocol_mode": "Modbus RTU",
     "baudrate": 115200,
     "data_bits": 8,
@@ -13,5 +14,6 @@
     "timeout": 100,
     "input_format": null,
     "line_ending": "\\r\\n (CRLF)",
-    "payload": ""
+    "payload": "",
+    "log_format": "HEX"
 }

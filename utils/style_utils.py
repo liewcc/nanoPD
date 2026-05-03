@@ -197,8 +197,7 @@ def apply_global_css(
                     </div>
                 """, unsafe_allow_html=True)
 
-    with st.sidebar:
-        _sidebar_occupied_ports_panel()
+            _sidebar_occupied_ports_panel()
 
     raw_styles = get_global_styles(
         title_size=title_size, 
