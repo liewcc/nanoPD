@@ -131,8 +131,8 @@ def save_rs485_config():
         except Exception as e:
             st.toast(f"Save failed: {e}", icon="❌")
 
-# ─── Apply saved config on first load ───────────────────────────────────────
-if 'rs485_config_loaded' not in st.session_state:
+# ─── Apply saved config on page load ────────────────────────────────────────
+if not st.session_state.get('rs485_config_loaded', False):
     try:
         with open(st.session_state.current_rs485_config_file, 'r') as f:
             _apply_config(json.load(f))
