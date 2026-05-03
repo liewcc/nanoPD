@@ -87,7 +87,7 @@ with st.container(border=True):
                 """, unsafe_allow_html=True
             )
     with col2:
-        if st.button("Update", type="primary", disabled=not has_update, use_container_width=True):
+        if st.button("Update", type="primary", disabled=not has_update, width="stretch"):
             try:
                 creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
                 subprocess.run(["git", "pull"], check=True, capture_output=True, timeout=15, creationflags=creationflags)
@@ -96,7 +96,7 @@ with st.container(border=True):
             except Exception as e:
                 st.error(f"Update failed: {e}")
     with col3:
-        st.link_button("GitHub", "https://github.com/liewcc/nanoPD", use_container_width=True)
+        st.link_button("GitHub", "https://github.com/liewcc/nanoPD", width="stretch")
 
 # COM ports section — auto-refresh every 3 seconds using @st.fragment
 @st.fragment(run_every=3)
