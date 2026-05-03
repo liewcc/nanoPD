@@ -17,40 +17,8 @@ apply_global_css(
     info_size=st.session_state.ui_cfg["info_size"],
     code_font=st.session_state.ui_cfg["code_font"],
     code_size=st.session_state.ui_cfg["code_size"],
-    code_lh=st.session_state.ui_cfg["code_lh"],
-    is_mcu_page=True
+    code_lh=st.session_state.ui_cfg["code_lh"]
 )
-
-@st.fragment(run_every=3)
-def sidebar_occupied_ports_panel():
-    ports = serial.tools.list_ports.comports()
-    if ports:
-        occupied_ports = []
-        for p in ports:
-            try:
-                s = serial.Serial(p.device)
-                s.close()
-            except serial.SerialException as e:
-                if "Access is denied" in str(e) or "PermissionError" in str(e):
-                    occupied_ports.append(p.device)
-            except Exception:
-                pass
-        
-        if occupied_ports:
-            ports_str = ", ".join(occupied_ports)
-            st.markdown(f"""
-                <div style='background:#fffbeb; border:1px solid #fde68a; color:#92400e; padding:12px; border-radius:8px; margin-bottom:1rem; font-size:0.85em;'>
-                    <div style='font-weight:700; display:flex; align-items:center; gap:6px;'>
-                        🔒 COM PORT IN USE
-                    </div>
-                    <div style='margin-top:4px; color:#b45309; line-height:1.3;'>
-                        The following ports are currently occupied: <b>{ports_str}</b>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-
-with st.sidebar:
-    sidebar_occupied_ports_panel()
 
 # 2. Foolproof Centered Logo (Base64 + HTML)
 import os
