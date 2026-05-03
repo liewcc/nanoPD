@@ -503,10 +503,23 @@ st.markdown(f"""
             width: 0 !important;
         }}
 
-        /* OUTPUT LOGS textarea - constrained but not full-screen */
+        /* OUTPUT LOGS textarea - dynamic height */
         div[data-testid="stVerticalBlock"]:has(.layout-mcu-marker) div[data-testid="stTextArea"] textarea {{
-            height: 430px !important;
+            height: var(--dynamic-ta-height, 350px) !important;
             resize: none !important;
+        }}
+
+        /* ─── FIX A: Align radio buttons with Clear button on same row ─── */
+        div[data-testid="stVerticalBlock"]:has(> .layout-mcu-marker) > div[data-testid="stHorizontalBlock"]:first-of-type div[data-testid="stRadio"] {{
+            padding-top: 0 !important;
+            margin-top: 0 !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> .layout-mcu-marker) > div[data-testid="stHorizontalBlock"]:first-of-type div[data-testid="stRadio"] > div {{
+            padding-top: 0 !important;
+            margin-top: 0 !important;
+        }}
+        div[data-testid="stVerticalBlock"]:has(> .layout-mcu-marker) > div[data-testid="stHorizontalBlock"]:first-of-type {{
+            align-items: center !important;
         }}
     </style>
 """, unsafe_allow_html=True)
@@ -635,9 +648,8 @@ with tab_decoder:
             st.markdown('<div class="layout-mcu-marker" style="display:none;"></div>', unsafe_allow_html=True)
             title_col, radio_col, btn_col = st.columns([0.45, 0.35, 0.2])
             with title_col:
-                st.markdown('<p class="metric-label" style="margin:12px 0 12px 0">OUTPUT LOGS</p>', unsafe_allow_html=True)
+                st.markdown('<p class="metric-label" style="margin:0">OUTPUT LOGS</p>', unsafe_allow_html=True)
             with radio_col:
-                st.markdown('<div style="margin-top:4px;"></div>', unsafe_allow_html=True)
                 log_format = st.radio("Log Format", ["HEX", "ASCII"], horizontal=True, label_visibility="collapsed", key="cfg_log_format")
             with btn_col:
                 st.button("🗑️ Clear", on_click=handle_clear, width='stretch')
@@ -665,7 +677,7 @@ with tab_decoder:
             output_placeholder.text_area(
                 "RS485 Logs",
                 value="\n".join(display_lines),
-                height=430,
+                height=350,
                 label_visibility="collapsed",
                 disabled=False
             )
@@ -722,13 +734,7 @@ with tab_decoder:
                                  help="ATK-D40-B: 1s silence → +++ → wait 'a' → reply 'a' to enter AT Command Mode"):
                         handle_escape_mode()
                         st.rerun()
-            output_placeholder.text_area(
-                "RS485 Logs",
-                value="\n".join(display_lines),
-                height=650,
-                label_visibility="collapsed",
-                disabled=False
-            )
+
 
 # ─── TAB 2: MODBUS ADDRESS ANALYSIS ────────────────────────────────────────
 with tab_modbus:
@@ -747,29 +753,52 @@ for ss_key in CFG_KEYS.values():
     if ss_key in st.session_state:
         st.session_state[f"persist_{ss_key}"] = st.session_state[ss_key]
 
-# ─── AUTO-SCROLL SCRIPT ─────────────────────────────────────────────────────
-if st.session_state.rs485_output:
-    st.html(
-        f"""
-        <!-- Scroll: {{time.time()}} -->
-        <script>
-        function scrollToBottom() {{
-            var parentDoc = window.parent && window.parent.document ? window.parent.document : document;
-            var markers = parentDoc.querySelectorAll('.layout-mcu-marker');
-            if (markers.length > 0) {{
-                var block = markers[0].closest('[data-testid="stVerticalBlock"]');
-                if (block) {{
-                    var ta = block.querySelector('textarea');
-                    if (ta) {{
-                        ta.scrollTop = ta.scrollHeight;
-                    }}
+# ─── DYNAMIC LAYOUT & SCROLL SCRIPT ─────────────────────────────────────────
+scroll_flag = "true" if st.session_state.rs485_output else "false"
+
+st.html(
+    f"""
+    <!-- Render Time: {time.time()} -->
+    <script>
+    function updateLayoutAndScroll() {{
+        var parentDoc = window.parent && window.parent.document ? window.parent.document : document;
+        
+        // 1. Dynamic Height Calculation
+        var mcuMarker = parentDoc.querySelector('.layout-mcu-marker');
+        var codingMarker = parentDoc.querySelector('.layout-coding-marker');
+        if (mcuMarker && codingMarker) {{
+            var ta = mcuMarker.closest('[data-testid="stVerticalBlock"]')?.querySelector('textarea');
+            var inputBlock = codingMarker.closest('[data-testid="stVerticalBlockBorderWrapper"]');
+            if (ta && inputBlock) {{
+                var taRect = ta.getBoundingClientRect();
+                var inputBlockHeight = inputBlock.offsetHeight;
+                // Viewport height - textarea start - data input container height - 45px (accounts for gap + padding)
+                var newHeight = window.innerHeight - taRect.top - inputBlockHeight - 45; 
+                if (newHeight > 150) {{
+                    parentDoc.documentElement.style.setProperty('--dynamic-ta-height', newHeight + 'px');
                 }}
             }}
         }}
-        var scrollInterval = setInterval(scrollToBottom, 50);
-        setTimeout(function() {{ clearInterval(scrollInterval); }}, 1500);
-        </script>
-        """,
-        unsafe_allow_javascript=True
-    )
+
+        // 2. Scroll to Bottom
+        if ({scroll_flag} === true && mcuMarker) {{
+            var block = mcuMarker.closest('[data-testid="stVerticalBlock"]');
+            if (block) {{
+                var ta = block.querySelector('textarea');
+                if (ta) {{
+                    ta.scrollTop = ta.scrollHeight;
+                }}
+            }}
+        }}
+    }}
+    
+    var layoutInterval = setInterval(updateLayoutAndScroll, 50);
+    setTimeout(function() {{ clearInterval(layoutInterval); }}, 1500);
+    
+    var parentWin = window.parent || window;
+    parentWin.addEventListener('resize', updateLayoutAndScroll);
+    </script>
+    """,
+    unsafe_allow_javascript=True
+)
 
