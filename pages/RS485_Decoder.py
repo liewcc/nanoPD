@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import filedialog
 from utils.style_utils import apply_global_css
 from utils.config_utils import load_ui_config
+from utils import modbus_address_analysis
 
 # ─── Paths ──────────────────────────────────────────────────────────────────
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -372,6 +373,19 @@ def read_data():
                     payload = rx_buffer[len(sent_bytes):]
                 if payload:
                     st.session_state.rs485_output.append({"time": time.time(), "dir": "RX", "data": bytes(payload)})
+                    
+                    if st.session_state.cfg_protocol_mode == "Modbus RTU":
+                        try:
+                            # Attempt to update the Modbus analysis table with the received payload
+                            modbus_address_analysis.update_from_rx(
+                                rx_data=bytes(payload),
+                                start_addr=locals().get("start_addr", 0),
+                                quantity=locals().get("quantity", 0),
+                                func_code=locals().get("func_code", 0)
+                            )
+                        except Exception as parse_e:
+                            pass # Fail silently so it doesn't break polling
+                            
                     return True
         except Exception as e:
             st.toast(f"Error reading data: {e}", icon="❌")
@@ -500,236 +514,232 @@ st.markdown(f"""
 
 is_connected = st.session_state.rs485_serial is not None and st.session_state.rs485_serial.is_open
 
-# ─── MAIN LAYOUT ────────────────────────────────────────────────────────────
-col_left, col_right = st.columns([1, 1])
+# ─── TABS ───────────────────────────────────────────────────────────────────
+tab_decoder, tab_modbus = st.tabs(["📡 RS485 Decoder", "📋 Modbus Address Analysis"])
 
-with col_left:
-    with st.container(border=True):
-        st.markdown('<p class="metric-label" style="margin:0 0 12px 0">COM PORT CONFIGURATION</p>', unsafe_allow_html=True)
-        available_ports = get_com_ports()
-        if not available_ports:
-            available_ports = ["None"]
-            
-        if is_connected and hasattr(st.session_state.rs485_serial, 'port'):
-            active_port = st.session_state.rs485_serial.port
-            if active_port and active_port not in available_ports:
-                available_ports.append(active_port)
-            st.session_state.cfg_com_port = active_port
+# ─── TAB 1: RS485 DECODER ───────────────────────────────────────────────────
+with tab_decoder:
+    col_left, col_right = st.columns([1, 1])
 
-        saved_port = st.session_state.get("cfg_com_port", "")
-        if saved_port and saved_port not in available_ports:
-            available_ports.append(saved_port)
-            
-        selected_port = st.selectbox("COM Port", available_ports, key="cfg_com_port", disabled=is_connected, label_visibility="collapsed")
+    with col_left:
+        with st.container(border=True):
+            st.markdown('<p class="metric-label" style="margin:0 0 12px 0">COM PORT CONFIGURATION</p>', unsafe_allow_html=True)
+            available_ports = get_com_ports()
+            if not available_ports:
+                available_ports = ["None"]
+            if is_connected and hasattr(st.session_state.rs485_serial, 'port'):
+                active_port = st.session_state.rs485_serial.port
+                if active_port and active_port not in available_ports:
+                    available_ports.append(active_port)
+                st.session_state.cfg_com_port = active_port
+            saved_port = st.session_state.get("cfg_com_port", "")
+            if saved_port and saved_port not in available_ports:
+                available_ports.append(saved_port)
+            selected_port = st.selectbox("COM Port", available_ports, key="cfg_com_port", disabled=is_connected, label_visibility="collapsed")
 
-    # Configuration File Manager
-    with st.container(border=True):
-        st.markdown('<p class="metric-label" style="margin:0 0 12px 0">CONFIGURATION FILE</p>', unsafe_allow_html=True)
-        fc_left, fc_right = st.columns([0.7, 0.3])
-        with fc_left:
-            st.code(st.session_state.current_rs485_config_file, language="text")
-        with fc_right:
-            lb_col, sb_col = st.columns(2)
-            with lb_col:
-                st.button("📂 Load", width='stretch', on_click=load_rs485_config)
+        # Configuration File Manager
+        with st.container(border=True):
+            st.markdown('<p class="metric-label" style="margin:0 0 12px 0">CONFIGURATION FILE</p>', unsafe_allow_html=True)
+            fc_left, fc_right = st.columns([0.7, 0.3])
+            with fc_left:
+                st.code(st.session_state.current_rs485_config_file, language="text")
+            with fc_right:
+                lb_col, sb_col = st.columns(2)
+                with lb_col:
+                    st.button("📂 Load", width='stretch', on_click=load_rs485_config)
+                with sb_col:
+                    st.button("💾 Save", width='stretch', on_click=save_rs485_config)
+
+        # RS485 Parameters & Connection Controls
+        with st.container(border=True):
+            mode_col, title_col = st.columns([0.6, 0.4])
+            with mode_col:
+                protocol_mode = st.radio("Protocol Mode", ["Modbus RTU", "AT Command"], key="cfg_protocol_mode", horizontal=True, label_visibility="collapsed")
+            with title_col:
+                st.markdown('<p class="metric-label" style="margin:4px 0 12px 0; text-align:right;">PROTOCOL CONFIGURATION</p>', unsafe_allow_html=True)
+
+            baud_col, db_col, par_col, sb_col = st.columns(4)
+            with baud_col:
+                st.markdown('<p class="metric-label" style="margin:4px 0 0 0">BAUD RATE</p>', unsafe_allow_html=True)
+                baudrate = st.selectbox("Baud Rate", [9600, 14400, 19200, 38400, 57600, 115200, 128000, 256000, 921600], key="cfg_baudrate", disabled=is_connected, label_visibility="collapsed")
+            with db_col:
+                st.markdown('<p class="metric-label" style="margin:4px 0 0 0">DATA BITS</p>', unsafe_allow_html=True)
+                data_bits = st.selectbox("Data Bits", [5, 6, 7, 8], key="cfg_data_bits", disabled=is_connected, label_visibility="collapsed")
+            with par_col:
+                st.markdown('<p class="metric-label" style="margin:4px 0 0 0">PARITY</p>', unsafe_allow_html=True)
+                parity = st.selectbox("Parity", ["None", "Even", "Odd", "Mark", "Space"], key="cfg_parity", disabled=is_connected, label_visibility="collapsed")
             with sb_col:
-                st.button("💾 Save", width='stretch', on_click=save_rs485_config)
+                st.markdown('<p class="metric-label" style="margin:4px 0 0 0">STOP BITS</p>', unsafe_allow_html=True)
+                stop_bits = st.selectbox("Stop Bits", [1, 1.5, 2], key="cfg_stop_bits", disabled=is_connected, label_visibility="collapsed")
 
-    # RS485 Parameters & Connection Controls
-    with st.container(border=True):
-        mode_col, title_col = st.columns([0.6, 0.4])
-        with mode_col:
-            protocol_mode = st.radio("Protocol Mode", ["Modbus RTU", "AT Command"], key="cfg_protocol_mode", horizontal=True, label_visibility="collapsed")
-        with title_col:
-            st.markdown('<p class="metric-label" style="margin:4px 0 12px 0; text-align:right;">PROTOCOL CONFIGURATION</p>', unsafe_allow_html=True)
-            
-        baud_col, db_col, par_col, sb_col = st.columns(4)
-        with baud_col:
-            st.markdown('<p class="metric-label" style="margin:4px 0 0 0">BAUD RATE</p>', unsafe_allow_html=True)
-            baudrate = st.selectbox("Baud Rate", [9600, 14400, 19200, 38400, 57600, 115200, 128000, 256000, 921600], key="cfg_baudrate", disabled=is_connected, label_visibility="collapsed")
-        with db_col:
-            st.markdown('<p class="metric-label" style="margin:4px 0 0 0">DATA BITS</p>', unsafe_allow_html=True)
-            data_bits = st.selectbox("Data Bits", [5, 6, 7, 8], key="cfg_data_bits", disabled=is_connected, label_visibility="collapsed")
-        with par_col:
-            st.markdown('<p class="metric-label" style="margin:4px 0 0 0">PARITY</p>', unsafe_allow_html=True)
-            parity = st.selectbox("Parity", ["None", "Even", "Odd", "Mark", "Space"], key="cfg_parity", disabled=is_connected, label_visibility="collapsed")
-        with sb_col:
-            st.markdown('<p class="metric-label" style="margin:4px 0 0 0">STOP BITS</p>', unsafe_allow_html=True)
-            stop_bits = st.selectbox("Stop Bits", [1, 1.5, 2], key="cfg_stop_bits", disabled=is_connected, label_visibility="collapsed")
+            if protocol_mode == "Modbus RTU":
+                rs_col1, rs_col2 = st.columns(2)
+                with rs_col1:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">DEVICE ID (HEX | DEC)</p>', unsafe_allow_html=True)
+                    id_hex_col, id_dec_col = st.columns(2)
+                    with id_hex_col:
+                        device_id_hex = st.text_input("Device ID HEX", key="device_id_hex_input", on_change=update_device_id_from_hex, label_visibility="collapsed")
+                    with id_dec_col:
+                        device_id_dec = st.text_input("Device ID DEC", key="device_id_dec_input", on_change=update_device_id_from_dec, label_visibility="collapsed")
+                with rs_col2:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">FUNCTION (HEX)</p>', unsafe_allow_html=True)
+                    modbus_funcs = [
+                        "01 (Read Coils)",
+                        "02 (Read Discrete Inputs)",
+                        "03 (Read Holding Registers)",
+                        "04 (Read Input Registers)",
+                        "05 (Write Single Coil)",
+                        "06 (Write Single Register)",
+                        "0F (Write Multiple Coils)",
+                        "10 (Write Multiple Registers)"
+                    ]
+                    func_code_selection = st.selectbox("Function Code", modbus_funcs, key="cfg_func_code", label_visibility="collapsed")
+                    func_code = (func_code_selection or "03 (Read Holding Registers)").split(" ")[0]
 
-        if protocol_mode == "Modbus RTU":
-            rs_col1, rs_col2 = st.columns(2)
-            with rs_col1:
-                st.markdown('<p class="metric-label" style="margin:4px 0 0 0">DEVICE ID (HEX | DEC)</p>', unsafe_allow_html=True)
-                id_hex_col, id_dec_col = st.columns(2)
-                with id_hex_col:
-                    device_id_hex = st.text_input("Device ID HEX", key="device_id_hex_input", on_change=update_device_id_from_hex, label_visibility="collapsed")
-                with id_dec_col:
-                    device_id_dec = st.text_input("Device ID DEC", key="device_id_dec_input", on_change=update_device_id_from_dec, label_visibility="collapsed")
-            with rs_col2:
-                st.markdown('<p class="metric-label" style="margin:4px 0 0 0">FUNCTION (HEX)</p>', unsafe_allow_html=True)
-                modbus_funcs = [
-                    "01 (Read Coils)",
-                    "02 (Read Discrete Inputs)",
-                    "03 (Read Holding Registers)",
-                    "04 (Read Input Registers)",
-                    "05 (Write Single Coil)",
-                    "06 (Write Single Register)",
-                    "0F (Write Multiple Coils)",
-                    "10 (Write Multiple Registers)"
-                ]
-                func_code_selection = st.selectbox("Function Code", modbus_funcs, key="cfg_func_code", label_visibility="collapsed")
-                func_code = (func_code_selection or "03 (Read Holding Registers)").split(" ")[0]
-
-            r3_col1, r3_col2, r3_col3 = st.columns(3)
-            with r3_col1:
-                st.markdown('<p class="metric-label" style="margin:4px 0 0 0">START ADDR (HEX | DEC)</p>', unsafe_allow_html=True)
-                sa_hex_col, sa_dec_col = st.columns(2)
-                with sa_hex_col:
-                    start_addr_hex = st.text_input("Start Addr HEX", key="start_addr_hex_input", on_change=update_start_addr_from_hex, label_visibility="collapsed")
-                with sa_dec_col:
-                    start_addr_dec = st.text_input("Start Addr DEC", key="start_addr_dec_input", on_change=update_start_addr_from_dec, label_visibility="collapsed")
-            with r3_col2:
-                st.markdown('<p class="metric-label" style="margin:4px 0 0 0">QUANTITY (DEC)</p>', unsafe_allow_html=True)
-                quantity = st.number_input("Quantity", min_value=1, max_value=125, step=1, key="cfg_quantity", label_visibility="collapsed")
-            with r3_col3:
-                st.markdown('<p class="metric-label" style="margin:4px 0 0 0">TIMEOUT (MS)</p>', unsafe_allow_html=True)
-                rs_timeout = st.number_input("Timeout", min_value=10, max_value=5000, step=10, key="cfg_timeout", label_visibility="collapsed")
-        else:
-            at_col1, at_col2, at_col3 = st.columns(3)
-            with at_col1:
-                st.markdown('<p class="metric-label" style="margin:4px 0 0 0">TIMEOUT (MS)</p>', unsafe_allow_html=True)
-                rs_timeout = st.number_input("Timeout", min_value=10, max_value=5000, step=10, key="cfg_timeout", label_visibility="collapsed")
-
-        ab1, ab2, ab3 = st.columns(3)
-        with ab1:
-            if not is_connected:
-                st.button("🔌 Connect", width="stretch", type="primary", on_click=handle_connect, args=(selected_port, baudrate, data_bits, parity, stop_bits))
+                r3_col1, r3_col2, r3_col3 = st.columns(3)
+                with r3_col1:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">START ADDR (HEX | DEC)</p>', unsafe_allow_html=True)
+                    sa_hex_col, sa_dec_col = st.columns(2)
+                    with sa_hex_col:
+                        start_addr_hex = st.text_input("Start Addr HEX", key="start_addr_hex_input", on_change=update_start_addr_from_hex, label_visibility="collapsed")
+                    with sa_dec_col:
+                        start_addr_dec = st.text_input("Start Addr DEC", key="start_addr_dec_input", on_change=update_start_addr_from_dec, label_visibility="collapsed")
+                with r3_col2:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">QUANTITY (DEC)</p>', unsafe_allow_html=True)
+                    quantity = st.number_input("Quantity", min_value=1, max_value=125, step=1, key="cfg_quantity", label_visibility="collapsed")
+                with r3_col3:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">TIMEOUT (MS)</p>', unsafe_allow_html=True)
+                    rs_timeout = st.number_input("Timeout", min_value=10, max_value=5000, step=10, key="cfg_timeout", label_visibility="collapsed")
             else:
-                st.button("🛑 Disconnect", width="stretch", type="secondary", on_click=handle_disconnect)
-        with ab2:
-            st.button("📥 Read", width="stretch", disabled=not is_connected, on_click=read_data)
-        with ab3:
-            if st.button("🔁 Auto", width="stretch", disabled=not is_connected, type="primary" if st.session_state.rs485_auto_read else "secondary"):
-                st.session_state.rs485_auto_read = not st.session_state.rs485_auto_read
-                st.rerun()
+                at_col1, at_col2, at_col3 = st.columns(3)
+                with at_col1:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">TIMEOUT (MS)</p>', unsafe_allow_html=True)
+                    rs_timeout = st.number_input("Timeout", min_value=10, max_value=5000, step=10, key="cfg_timeout", label_visibility="collapsed")
 
+            ab1, ab2, ab3 = st.columns(3)
+            with ab1:
+                if not is_connected:
+                    st.button("🔌 Connect", width="stretch", type="primary", on_click=handle_connect, args=(selected_port, baudrate, data_bits, parity, stop_bits))
+                else:
+                    st.button("🛑 Disconnect", width="stretch", type="secondary", on_click=handle_disconnect)
+            with ab2:
+                st.button("📥 Read", width="stretch", disabled=not is_connected, on_click=read_data)
+            with ab3:
+                if st.button("🔁 Auto", width="stretch", disabled=not is_connected, type="primary" if st.session_state.rs485_auto_read else "secondary"):
+                    st.session_state.rs485_auto_read = not st.session_state.rs485_auto_read
+                    st.rerun()
 
-with col_right:
-    # Output container
-    with st.container(border=True):
-        st.markdown('<div class="layout-mcu-marker" style="display:none;"></div>', unsafe_allow_html=True)
-        title_col, radio_col, btn_col = st.columns([0.45, 0.35, 0.2])
-        with title_col:
-            st.markdown('<p class="metric-label" style="margin:12px 0 12px 0">OUTPUT LOGS</p>', unsafe_allow_html=True)
-        with radio_col:
-            st.markdown('<div style="margin-top:4px;"></div>', unsafe_allow_html=True)
-            log_format = st.radio("Log Format", ["HEX", "ASCII"], horizontal=True, label_visibility="collapsed", key="cfg_log_format")
-        with btn_col:
-            st.button("🗑️ Clear", on_click=handle_clear, width='stretch')
-        
-        # Display logs
-        output_placeholder = st.empty()
-        display_lines = []
-        for log in st.session_state.rs485_output[-42:]:
-            direction = log.get("dir", "??")
-            raw_data = log.get("data", b"")
-            t = log.get("time", 0.0)
-            
-            # Format time as HH:MM:SS.mmm
-            t_str = ""
-            if t > 0:
-                dt = time.localtime(t)
-                ms = int((t - int(t)) * 1000)
-                t_str = f"[{dt.tm_hour:02d}:{dt.tm_min:02d}:{dt.tm_sec:02d}.{ms:03d}] "
+    with col_right:
+        # Output container
+        with st.container(border=True):
+            st.markdown('<div class="layout-mcu-marker" style="display:none;"></div>', unsafe_allow_html=True)
+            title_col, radio_col, btn_col = st.columns([0.45, 0.35, 0.2])
+            with title_col:
+                st.markdown('<p class="metric-label" style="margin:12px 0 12px 0">OUTPUT LOGS</p>', unsafe_allow_html=True)
+            with radio_col:
+                st.markdown('<div style="margin-top:4px;"></div>', unsafe_allow_html=True)
+                log_format = st.radio("Log Format", ["HEX", "ASCII"], horizontal=True, label_visibility="collapsed", key="cfg_log_format")
+            with btn_col:
+                st.button("🗑️ Clear", on_click=handle_clear, width='stretch')
 
-            if log_format == "HEX":
-                formatted = raw_data.hex(' ').upper()
+            # Display logs
+            output_placeholder = st.empty()
+            display_lines = []
+            for log in st.session_state.rs485_output[-42:]:
+                direction = log.get("dir", "??")
+                raw_data = log.get("data", b"")
+                t = log.get("time", 0.0)
+                t_str = ""
+                if t > 0:
+                    dt = time.localtime(t)
+                    ms = int((t - int(t)) * 1000)
+                    t_str = f"[{dt.tm_hour:02d}:{dt.tm_min:02d}:{dt.tm_sec:02d}.{ms:03d}] "
+                if log_format == "HEX":
+                    formatted = raw_data.hex(' ').upper()
+                else:
+                    formatted = raw_data.decode('utf-8', errors='replace').replace('\r', '\\r').replace('\n', '\\n')
+                prefix = ">>" if direction == "TX" else "<<"
+                display_lines.append(f"{t_str}{prefix} {direction}: {formatted}")
+            if not display_lines:
+                display_lines = ["(No data received)"]
+            output_placeholder.text_area(
+                "RS485 Logs",
+                value="\n".join(display_lines),
+                height=430,
+                label_visibility="collapsed",
+                disabled=False
+            )
+
+        # DATA INPUT container (right-bottom)
+        with st.container(border=True):
+            st.markdown(
+                '<div class="layout-coding-marker" style="display:none;"></div>'
+                '<p class="metric-label" style="margin:0 0 12px 0">DATA INPUT</p>',
+                unsafe_allow_html=True
+            )
+            if protocol_mode == "Modbus RTU":
+                input_format = st.radio("Format", ["HEX", "ASCII"], key="cfg_input_format", horizontal=True, label_visibility="collapsed")
+                input_text = st.text_input(
+                    "Payload",
+                    key="cfg_payload",
+                    label_visibility="collapsed",
+                    placeholder="Enter payload here...\ne.g. 01 03 00 00 00 02 C4 0B" if input_format == "HEX" else "Hello RS485"
+                )
+                if st.button("📤 Send Data", width="stretch", type="primary", disabled=not is_connected):
+                    if input_text:
+                        handle_send(input_text, input_format)
+                        st.rerun()
             else:
-                formatted = raw_data.decode('utf-8', errors='replace').replace('\r', '\\r').replace('\n', '\\n')
-                
-            prefix = ">>" if direction == "TX" else "<<"
-            display_lines.append(f"{t_str}{prefix} {direction}: {formatted}")
-            
-        if not display_lines:
-            display_lines = ["(No data received)"]
-        output_placeholder.text_area(
-            "RS485 Logs",
-            value="\n".join(display_lines),
-            height=430,
-            label_visibility="collapsed",
-            disabled=False
-        )
-
-    # DATA INPUT container (right-bottom)
-    with st.container(border=True):
-        st.markdown(
-            '<div class="layout-coding-marker" style="display:none;"></div>'
-            '<p class="metric-label" style="margin:0 0 12px 0">DATA INPUT</p>',
-            unsafe_allow_html=True
-        )
-        if protocol_mode == "Modbus RTU":
-            input_format = st.radio("Format", ["HEX", "ASCII"], key="cfg_input_format", horizontal=True, label_visibility="collapsed")
-            input_text = st.text_input(
-                "Payload",
-                key="cfg_payload",
+                fmt_col, le_col = st.columns(2)
+                with fmt_col:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">FORMAT</p>', unsafe_allow_html=True)
+                    input_format = st.selectbox("Format", ["ASCII"], index=0, disabled=True, label_visibility="collapsed")
+                with le_col:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">LINE ENDING</p>', unsafe_allow_html=True)
+                    line_ending = st.selectbox("Line Ending", ["\\r\\n (CRLF)", "\\r (CR)", "\\n (LF)", "None"], key="cfg_line_ending", label_visibility="collapsed")
+                input_text = st.text_input(
+                    "Payload",
+                    key="cfg_payload",
+                    label_visibility="collapsed",
+                    placeholder="AT+RST"
+                )
+                send_col, esc_col = st.columns([0.6, 0.4])
+                with send_col:
+                    if st.button("📤 Send AT Command", width="stretch", type="primary", disabled=not is_connected):
+                        _AT_COOLDOWN = 0.5  # ATK-D40-B requires >500ms between commands
+                        elapsed = time.time() - st.session_state.rs485_last_send_time
+                        if elapsed < _AT_COOLDOWN:
+                            remaining_ms = int((_AT_COOLDOWN - elapsed) * 1000)
+                            st.toast(f"⏳ Please wait {remaining_ms}ms before sending next command (ATK-D40-B requirement)", icon="⚠️")
+                        else:
+                            le_map = {"\\r\\n (CRLF)": "\r\n", "\\r (CR)": "\r", "\\n (LF)": "\n", "None": ""}
+                            final_payload = input_text + le_map.get(line_ending, "")
+                            if final_payload:
+                                handle_send(final_payload, "ASCII")
+                                st.rerun()
+                with esc_col:
+                    if st.button("⎋ Escape Mode", width="stretch", type="secondary", disabled=not is_connected,
+                                 help="ATK-D40-B: 1s silence → +++ → wait 'a' → reply 'a' to enter AT Command Mode"):
+                        handle_escape_mode()
+                        st.rerun()
+            output_placeholder.text_area(
+                "RS485 Logs",
+                value="\n".join(display_lines),
+                height=650,
                 label_visibility="collapsed",
-                placeholder="Enter payload here...\ne.g. 01 03 00 00 00 02 C4 0B" if input_format == "HEX" else "Hello RS485"
+                disabled=False
             )
-            if st.button("📤 Send Data", width="stretch", type="primary", disabled=not is_connected):
-                if input_text:
-                    handle_send(input_text, input_format)
-                    st.rerun()
-        else:
-            fmt_col, le_col = st.columns(2)
-            with fmt_col:
-                st.markdown('<p class="metric-label" style="margin:4px 0 0 0">FORMAT</p>', unsafe_allow_html=True)
-                input_format = st.selectbox("Format", ["ASCII"], index=0, disabled=True, label_visibility="collapsed")
-            with le_col:
-                st.markdown('<p class="metric-label" style="margin:4px 0 0 0">LINE ENDING</p>', unsafe_allow_html=True)
-                line_ending = st.selectbox("Line Ending", ["\\r\\n (CRLF)", "\\r (CR)", "\\n (LF)", "None"], key="cfg_line_ending", label_visibility="collapsed")
-            input_text = st.text_input(
-                "Payload",
-                key="cfg_payload",
-                label_visibility="collapsed",
-                placeholder="AT+RST"
-            )
-            send_col, esc_col = st.columns([0.6, 0.4])
-            with send_col:
-                if st.button("📤 Send AT Command", width="stretch", type="primary", disabled=not is_connected):
-                    _AT_COOLDOWN = 0.5  # ATK-D40-B requires >500ms between commands
-                    elapsed = time.time() - st.session_state.rs485_last_send_time
-                    if elapsed < _AT_COOLDOWN:
-                        remaining_ms = int((_AT_COOLDOWN - elapsed) * 1000)
-                        st.toast(f"⏳ Please wait {remaining_ms}ms before sending next command (ATK-D40-B requirement)", icon="⚠️")
-                    else:
-                        le_map = {"\\r\\n (CRLF)": "\r\n", "\\r (CR)": "\r", "\\n (LF)": "\n", "None": ""}
-                        final_payload = input_text + le_map.get(line_ending, "")
-                        if final_payload:
-                            handle_send(final_payload, "ASCII")
-                            st.rerun()
-            with esc_col:
-                if st.button("⎋ Escape Mode", width="stretch", type="secondary", disabled=not is_connected,
-                             help="ATK-D40-B: 1s silence → +++ → wait 'a' → reply 'a' to enter AT Command Mode"):
-                    handle_escape_mode()
-                    st.rerun()
-        output_placeholder.text_area(
-            "RS485 Logs",
-            value="\n".join(display_lines),
-            height=650,
-            label_visibility="collapsed",
-            disabled=False
-        )
 
+# ─── TAB 2: MODBUS ADDRESS ANALYSIS ────────────────────────────────────────
+with tab_modbus:
+    modbus_address_analysis.render()
 
 # ─── Auto-Read Loop ─────────────────────────────────────────────────────────
 if st.session_state.rs485_auto_read and is_connected:
-    # Modest delay to not overload the UI loop, but responsive enough
     time.sleep(0.2)
     if read_data():
         st.rerun()
     else:
-        # Rerun to keep polling
         st.rerun()
 
 # ─── PERSIST WIDGET STATE ───────────────────────────────────────────────────
@@ -762,3 +772,4 @@ if st.session_state.rs485_output:
         """,
         unsafe_allow_javascript=True
     )
+
