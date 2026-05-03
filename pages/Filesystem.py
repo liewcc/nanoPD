@@ -367,21 +367,21 @@ code_lh = st.session_state.ui_cfg.get("code_lh", "1.3")
 
 st.markdown(f"""
     <style>
-        /* ─── VIEWPORT BOTTOM PADDING ─── */
-        section[data-testid="stMain"] > div {{
-            padding-bottom: 20px !important;
-        }}
-        div[data-testid="block-container"] {{
-            padding-bottom: 20px !important;
-        }}
-
-        /* Strip column wrapper spacing so static heights control the gap precisely */
-        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {{
-            padding-bottom: 0 !important;
+        /* ================= DYNAMIC HEIGHT ================= */
+        /* Override Streamlit's hardcoded 843px heights using structural selectors (No :has() dependency) */
+        
+        div[data-testid="column"] div[data-testid="stVerticalBlockBorderWrapper"] {{
+            height: calc(100vh - 120px) !important;
+            max-height: calc(100vh - 120px) !important;
             margin-bottom: 0 !important;
         }}
-
-
+        
+        /* Target the internal scrollable block */
+        div[data-testid="column"] div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stVerticalBlock"] {{
+            height: 100% !important;
+            max-height: 100% !important;
+            overflow-y: auto !important;
+        }}
 
         /* Tree-specific styling using :has() to restrict to tree containers */
         div:has(> .element-container .custom-tree-wrapper) {{

@@ -39,10 +39,16 @@ pages = {
     ],
     "Utilities": [
         st.Page("pages/UI_calibration_sandbox.py", title="UI calibration sandbox", icon="🧪"),
+        st.Page("pages/RS485_Decoder.py", title="RS485 Decoder", icon="🔌"),
     ]
 }
 
 # Initialize and run the multi-page navigation router
 pg = st.navigation(pages)
+
+if st.session_state.get("current_nav_page") != pg.title:
+    st.session_state["current_nav_page"] = pg.title
+    st.session_state["rs485_config_loaded"] = False
+
 pg.run()
 

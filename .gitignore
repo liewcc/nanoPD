@@ -22,4 +22,6 @@ mcu/
 firmware/
 .agents/
 *.json
+!RS485_config_file/
+!RS485_config_file/*.json
 rule.md
