@@ -106,35 +106,43 @@ def com_ports_panel():
             """
             <div class="layout-control-marker" style="display:none;"></div>
             <p class="metric-label" style="margin:0 0 12px 0">COM PORTS</p>
-            <style>
-                [data-testid="stTable"] {
-                    font-family: var(--code-font, monospace) !important;
-                }
-                [data-testid="stTable"] th, [data-testid="stTable"] td {
-                    font-family: var(--code-font, monospace) !important;
-                    font-size: 13px !important;
-                }
-                [data-testid="stTable"] th {
-                    font-weight: 600 !important;
-                }
-            </style>
             """,
             unsafe_allow_html=True,
         )
         ports = serial.tools.list_ports.comports()
         if ports:
-            rows = []
+            import html
+            lines = []
             for p in ports:
-                rows.append({
-                    "Device": p.device,
-                    "Description": p.description,
-                    "Manufacturer": getattr(p, "manufacturer", ""),
-                    "VID": f"{p.vid:#04x}" if p.vid else "",
-                    "PID": f"{p.pid:#04x}" if p.pid else "",
-                    "Serial": getattr(p, "serial_number", "")
-                })
-            st.table(rows)
+                desc = (p.description or "").strip()
+                mfr = (getattr(p, "manufacturer", "") or "").strip()
+                ser = (getattr(p, "serial_number", "") or "").strip()
+                
+                vid_str = f"VID:{p.vid:#06x}" if p.vid else "VID:------"
+                pid_str = f"PID:{p.pid:#06x}" if p.pid else "PID:------"
+                mfr_str = f"MFR:{mfr}" if mfr else "MFR:------"
+                ser_str = f"SER:{ser}" if ser else "SER:------"
+                
+                # Highlight if it's the RP2350 target
+                is_rp = "RP2" in desc.upper() or "RP2" in mfr.upper() or p.vid == 0x2E8A
+                badge = " 🎯 TARGET" if is_rp else ""
+                
+                # Truncate strings if they are too long to maintain alignment
+                desc_trunc = desc[:28] + ".." if len(desc) > 30 else desc
+                mfr_trunc = mfr_str[:26] + ".." if len(mfr_str) > 28 else mfr_str
+                ser_trunc = ser_str[:22] + ".." if len(ser_str) > 24 else ser_str
+                
+                # Format into perfectly aligned columns
+                line = f"<b>{p.device:<6}</b> {desc_trunc:<30} <span style='color:#64748b;'>{mfr_trunc:<28} {vid_str:<12} {pid_str:<12} {ser_trunc:<24}</span><b style='color:#2ba14b;'>{badge}</b>"
+                lines.append(line)
+            
+            term_text = "\n".join(lines)
+            st.markdown(
+                f"""
+                <div style="background: #f8fafc; padding: 10px 14px; border-radius: 6px; border: 1px solid #e2e8f0; font-family: var(--code-font, monospace); font-size: var(--code-size, 14px); color: #0f172a; white-space: pre-wrap; overflow-x: auto; line-height: 1.5;">{term_text}</div>
+                """, unsafe_allow_html=True
+            )
         else:
-            st.write("No COM ports detected.")
+            st.markdown("<div style='font-size: 14px; color: #64748b;'>No COM ports detected.</div>", unsafe_allow_html=True)
 
 com_ports_panel()
