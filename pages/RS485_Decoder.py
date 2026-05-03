@@ -509,10 +509,18 @@ with col_left:
         available_ports = get_com_ports()
         if not available_ports:
             available_ports = ["None"]
+            
+        if is_connected and hasattr(st.session_state.rs485_serial, 'port'):
+            active_port = st.session_state.rs485_serial.port
+            if active_port and active_port not in available_ports:
+                available_ports.append(active_port)
+            st.session_state.cfg_com_port = active_port
+
         saved_port = st.session_state.get("cfg_com_port", "")
         if saved_port and saved_port not in available_ports:
             available_ports.append(saved_port)
-        selected_port = st.selectbox("COM Port", available_ports, key="cfg_com_port", label_visibility="collapsed")
+            
+        selected_port = st.selectbox("COM Port", available_ports, key="cfg_com_port", disabled=is_connected, label_visibility="collapsed")
 
     # Configuration File Manager
     with st.container(border=True):
@@ -538,16 +546,16 @@ with col_left:
         baud_col, db_col, par_col, sb_col = st.columns(4)
         with baud_col:
             st.markdown('<p class="metric-label" style="margin:4px 0 0 0">BAUD RATE</p>', unsafe_allow_html=True)
-            baudrate = st.selectbox("Baud Rate", [9600, 14400, 19200, 38400, 57600, 115200, 128000, 256000, 921600], key="cfg_baudrate", label_visibility="collapsed")
+            baudrate = st.selectbox("Baud Rate", [9600, 14400, 19200, 38400, 57600, 115200, 128000, 256000, 921600], key="cfg_baudrate", disabled=is_connected, label_visibility="collapsed")
         with db_col:
             st.markdown('<p class="metric-label" style="margin:4px 0 0 0">DATA BITS</p>', unsafe_allow_html=True)
-            data_bits = st.selectbox("Data Bits", [5, 6, 7, 8], key="cfg_data_bits", label_visibility="collapsed")
+            data_bits = st.selectbox("Data Bits", [5, 6, 7, 8], key="cfg_data_bits", disabled=is_connected, label_visibility="collapsed")
         with par_col:
             st.markdown('<p class="metric-label" style="margin:4px 0 0 0">PARITY</p>', unsafe_allow_html=True)
-            parity = st.selectbox("Parity", ["None", "Even", "Odd", "Mark", "Space"], key="cfg_parity", label_visibility="collapsed")
+            parity = st.selectbox("Parity", ["None", "Even", "Odd", "Mark", "Space"], key="cfg_parity", disabled=is_connected, label_visibility="collapsed")
         with sb_col:
             st.markdown('<p class="metric-label" style="margin:4px 0 0 0">STOP BITS</p>', unsafe_allow_html=True)
-            stop_bits = st.selectbox("Stop Bits", [1, 1.5, 2], key="cfg_stop_bits", label_visibility="collapsed")
+            stop_bits = st.selectbox("Stop Bits", [1, 1.5, 2], key="cfg_stop_bits", disabled=is_connected, label_visibility="collapsed")
 
         if protocol_mode == "Modbus RTU":
             rs_col1, rs_col2 = st.columns(2)
