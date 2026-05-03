@@ -3,9 +3,10 @@ import sys
 import os
 import subprocess
 import html
+import time
 from utils.style_utils import apply_global_css
 from utils.config_utils import load_ui_config
-from utils.mount_utils import is_mounted, is_rp2350_connected
+from utils.mount_utils import is_mounted, is_rp2350_connected, get_rp2350_port, send_ctrl_c_to_mcu, cleanup_all_mpremote_processes, CREATIONFLAGS
 
 # 1. Load UI Configuration
 if "ui_cfg" not in st.session_state:
@@ -129,10 +130,21 @@ if is_scanning and not mounted:
         if s_size > 16384: # Safety cap for OTP
             st.session_state["otp_data"] = "Error: Block too large (>16KB)"
         else:
-            creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-            cmd = [sys.executable, "-m", "mpremote", "exec",
-                   f"import ubinascii, uctypes; print(ubinascii.hexlify(uctypes.bytearray_at({s_addr}, {s_size})).decode())"]
-            res = subprocess.run(cmd, capture_output=True, timeout=15.0, creationflags=creationflags)
+            cleanup_all_mpremote_processes()
+            time.sleep(0.3)
+            
+            mcu_port = get_rp2350_port()
+            if mcu_port:
+                send_ctrl_c_to_mcu(mcu_port)
+            
+            script_code = f"import ubinascii, uctypes; print(ubinascii.hexlify(uctypes.bytearray_at({s_addr}, {s_size})).decode())"
+            
+            if mcu_port:
+                cmd = [sys.executable, "-m", "mpremote", "connect", mcu_port, "exec", script_code]
+            else:
+                cmd = [sys.executable, "-m", "mpremote", "exec", script_code]
+
+            res = subprocess.run(cmd, capture_output=True, timeout=15.0, creationflags=CREATIONFLAGS)
 
             if res.returncode == 0:
                 hex_data = res.stdout.decode().strip()
