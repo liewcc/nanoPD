@@ -4,6 +4,7 @@ from PIL import Image
 from utils.style_utils import apply_global_css
 from utils.config_utils import load_ui_config
 import serial.tools.list_ports
+import serial
 import subprocess
 
 # 1. Load configuration and apply styles
@@ -115,7 +116,6 @@ def com_ports_panel():
         ports = serial.tools.list_ports.comports()
         if ports:
             import html
-            import serial
             
             occupied_ports = []
             for p in ports:
