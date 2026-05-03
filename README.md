@@ -4,6 +4,7 @@
 
 ## 📍 Table of Contents
 
+- [🆕 Changelog (Bug Fixes & New Features)](CHANGELOG.md)
 - [🚀 Quick Start](#-quick-start-windows)
 - [✨ Features](#-features)
 - [📂 Project Structure](#-project-structure)
@@ -71,13 +72,6 @@ Detailed research and interpretation manuals for NanoPD 2.0 components:
 *   **[SRAM Monitor Interpretation Guide](guides/SRAM_Monitor_Guide.md)**: Learn how the hybrid scanner works and how to read the physical memory layout.
 *   **[XIAO RP2350 Telemetry Research](guides/xiao_rp2350_telemetry_research.md)**: Deep dive into the hardware nuances, ADC ghosting, and voltage sensing logic.
 *   **[XIAO RP2350 Reset Behavior](guides/xiao_rp2350_reset_behavior.md)**: Official documentation detailing why the RST button and USB power cycles are identical on hardware level.
-
-## 🐛 Bug Fixes & Updates
-
-*   **COM Port Detection (Home Page)**: Updated to automatically refresh the COM port list using modern Streamlit API (`@st.fragment`), displaying full details (VID, PID, description) without full page reloads.
-*   **REPL Execution Stability (`mpremote` Raw REPL Fix)**: Fixed the common `TransportError: could not enter raw repl` issue. The system now uses `pyserial` to explicitly send a direct `Ctrl+C` interrupt to the exact MCU port (detected via VID `0x2E8A` / `RP2`), bypassing busy loops. It then securely connects using `mpremote connect <port> exec` rather than relying on automatic port guessing.
-*   **Over-The-Air (OTA) Updates & Versioning**: Added a "System Version" container on the Home page that automatically queries the GitHub remote (with a 60-second cache) to detect if a newer commit is available. Provides a 1-click `Update` button to execute a safe `git pull` without overriding local configurations.
-*   **UI Polish & Aesthetics**: Perfected vertical alignment across metric blocks and action buttons. Enforced strict monospace typography on the COM Ports data table to match the register analysis aesthetics.
 
 ---
 
