@@ -19,17 +19,16 @@ def init_state():
     for k, v in _DEFAULTS.items():
         if k not in st.session_state:
             st.session_state[k] = v
-            
-    if len(st.session_state.cell_logs) == 0:
-        import os
-        log_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cellular_MQTT.log"))
-        if os.path.exists(log_file):
-            try:
-                with open(log_file, "r", encoding="utf-8") as f:
-                    lines = [line.strip() for line in f.readlines() if line.strip()]
-                    st.session_state.cell_logs = lines[-200:]
-            except:
-                pass
+            if k == "cell_logs":
+                import os
+                log_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cellular_MQTT.log"))
+                if os.path.exists(log_file):
+                    try:
+                        with open(log_file, "r", encoding="utf-8") as f:
+                            lines = [line.strip() for line in f.readlines() if line.strip()]
+                            st.session_state.cell_logs = lines[-200:]
+                    except:
+                        pass
 
 def get_com_ports():
     return [p.device for p in serial.tools.list_ports.comports()]
@@ -107,7 +106,7 @@ def handle_send_data(text=None):
         return
     
     if text is None:
-        text = st.session_state.get("cell_payload", "")
+        text = st.session_state.get("cell_payload_new") or st.session_state.get("cell_payload", "")
     if not text:
         return
     try:
@@ -166,6 +165,13 @@ def handle_read_serial():
 
 def handle_clear_logs():
     st.session_state.cell_logs.clear()
+    import os
+    log_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cellular_MQTT.log"))
+    try:
+        if os.path.exists(log_file):
+            open(log_file, "w", encoding="utf-8").close()
+    except:
+        pass
 
 
 def _enter_at_mode(ser):
@@ -207,13 +213,21 @@ def handle_provision():
         st.toast("COM not connected.", icon="⚠️")
         return
 
-    broker_ip = st.session_state.get("prov_ip", "")
-    broker_port = st.session_state.get("prov_port", "")
-    client_id = st.session_state.get("prov_cid", "")
-    username = st.session_state.get("prov_user", "")
-    password = st.session_state.get("prov_pwd", "")
-    sub_topic = st.session_state.get("prov_sub", "")
-    pub_topic = st.session_state.get("prov_pub", "")
+    broker_ip = st.session_state.get("prov_ip_new", "")
+    broker_port = st.session_state.get("prov_port_new", "")
+    client_id = st.session_state.get("prov_cid_new", "")
+    username = st.session_state.get("prov_user_new", "")
+    password = st.session_state.get("prov_pwd_new", "")
+    sub_topic = st.session_state.get("prov_sub_new", "")
+    pub_topic = st.session_state.get("prov_pub_new", "")
+
+    # AT+WORK="MQTT" resets all SUB enable flags to 0.
+    # If the user left prov_sub blank, preserve the existing HW subscription
+    # from the last scan so it is re-applied during the provision sequence.
+    if not sub_topic:
+        existing_hw = st.session_state.get("cell_hw_subs", [])
+        if existing_hw:
+            sub_topic = existing_hw[0]["topic"]
 
     st.session_state.cell_provisioning = True
 
@@ -229,17 +243,25 @@ def handle_provision():
         f'AT+MQTTCD="{client_id}"',
         f'AT+MQTTUN="{username}"',
         f'AT+MQTTPW="{password}"',
-        f'AT+MQTTSUB1="1","{sub_topic}","0"',
-        f'AT+MQTTPUB1="1","{pub_topic}","0","0"'
+        f'AT+MQTTPUB1="1","{pub_topic}","0","0"' if pub_topic else None,
+        f'AT+MQTTSUB1="1","{sub_topic}","0"' if sub_topic else None,
     ]
 
     for cmd in commands:
-        _send_and_wait(ser, (cmd + "\r\n").encode('utf-8'), 1.5)
+        if cmd:  # Skip None entries
+            _send_and_wait(ser, (cmd + "\r\n").encode('utf-8'), 1.5)
 
-    # Save & restart
-    _send_and_wait(ser, b'AT+S\r\n', 1.0)
+    # Return to transparent mode (auto-saves on these modules)
     _send_and_wait(ser, b'ATO\r\n', 1.0)
     st.session_state.cell_provisioning = False
+
+    # Re-enter AT mode after a short settle delay to read back the real
+    # hardware state. This is done AFTER ATO so AT+WORK="MQTT" has fully
+    # applied before we query.
+    time.sleep(1.5)
+    if _enter_at_mode(ser):
+        _read_hw_state_in_at_mode(ser)
+        _send_and_wait(ser, b'ATO\r\n', 1.0)
 
 # ─── Dynamic Subscription Management ─────────────────────────────────────────
 def handle_dtu_update_sub(topic, qos):
@@ -251,12 +273,19 @@ def handle_dtu_update_sub(topic, qos):
 
     time.sleep(1.0)
     if _enter_at_mode(ser):
-        cmd = f'AT+MQTTSUB1="1","{topic}","{qos}"'
+        # Find a free slot, default to 1 if we can't find one
+        free_slot = 1
+        hw_subs = st.session_state.get("cell_hw_subs", [])
+        used_slots = {s["slot"] for s in hw_subs}
+        for i in range(1, 5):
+            if i not in used_slots:
+                free_slot = i
+                break
+
+        cmd = f'AT+MQTTSUB{free_slot}="1","{topic}","{qos}"'
         resp = _send_and_wait(ser, (cmd + "\r\n").encode('utf-8'), 1.5)
-        if b'OK' in resp.upper():
-            st.session_state.cell_active_sub = topic
-            st.session_state.cell_active_qos = qos
         
+        _read_hw_state_in_at_mode(ser)
         _send_and_wait(ser, b'ATO\r\n', 1.0)
 
 def handle_dtu_unsubscribe():
@@ -266,12 +295,126 @@ def handle_dtu_unsubscribe():
         st.toast("COM not connected.", icon="⚠️")
         return
 
+    # Find which slot to unsub — try all possible widget keys
+    selected = (
+        st.session_state.get("cell_unsub_select_new_1")
+        or st.session_state.get("cell_unsub_select_new_3")
+    )
+    slot = "1"
+    if selected and selected.startswith("SUB"):
+        # e.g., "SUB2: atk/sub2" -> "2"
+        slot = selected[3:selected.find(":")]
+
     time.sleep(1.0)
     if _enter_at_mode(ser):
-        # We try to disable it with state=0. The topic might still be required.
-        cmd = f'AT+MQTTSUB1="0","nanopd/dtu/rx","0"'
+        # Disable the slot with state=0
+        cmd = f'AT+MQTTSUB{slot}="0","nanopd/dtu/rx","0"'
         resp = _send_and_wait(ser, (cmd + "\r\n").encode('utf-8'), 1.5)
-        if b'OK' in resp.upper():
-            st.session_state.cell_active_sub = None
         
+        _read_hw_state_in_at_mode(ser)
         _send_and_wait(ser, b'ATO\r\n', 1.0)
+
+
+def _parse_mqtt_query_response(resp_bytes, prefix):
+    """Parse a DTU query response like +MQTTSUB1:1,"topic",0 into (enable, topic, qos).
+    Returns None if parsing fails or the slot is disabled."""
+    try:
+        text = resp_bytes.decode('utf-8', errors='replace')
+    except:
+        return None
+
+    for line in text.splitlines():
+        line = line.strip()
+        if line.upper().startswith(prefix.upper()):
+            # Extract the part after the colon, e.g. '1,"nanopd/dtu/rx",0'
+            payload = line.split(":", 1)[1].strip()
+            # Remove surrounding quotes and split by comma
+            parts = []
+            current = ""
+            in_quotes = False
+            for ch in payload:
+                if ch == '"':
+                    in_quotes = not in_quotes
+                elif ch == ',' and not in_quotes:
+                    parts.append(current.strip().strip('"'))
+                    current = ""
+                    continue
+                current += ch
+            parts.append(current.strip().strip('"'))
+
+            if len(parts) >= 3:
+                enable = parts[0]
+                topic = parts[1]
+                qos = parts[2]
+                try:
+                    return (int(enable), topic, int(qos))
+                except ValueError:
+                    return None
+    return None
+
+
+def _read_hw_state_in_at_mode(ser):
+    """Internal helper to query DTU subscriptions and update session state.
+    Assumes DTU is ALREADY in AT mode."""
+    active_subs = []
+    test_resp = _send_and_wait(ser, b"AT+MQTTSUB1\r\n", 1.5)
+    query_suffix = ""
+    if b"ERROR" in test_resp.upper():
+        test_resp = _send_and_wait(ser, b"AT+MQTTSUB1?\r\n", 1.5)
+        if b"ERROR" not in test_resp.upper():
+            query_suffix = "?"
+    
+    for i in range(1, 5):
+        if i == 1 and query_suffix == "" and b"ERROR" not in test_resp.upper():
+            resp = test_resp
+        else:
+            cmd = f"AT+MQTTSUB{i}{query_suffix}\r\n"
+            resp = _send_and_wait(ser, cmd.encode('utf-8'), 1.5)
+            
+        parsed = _parse_mqtt_query_response(resp, f"+MQTTSUB{i}")
+        if parsed:
+            enable, topic, qos = parsed
+            if enable == 1 and topic:
+                active_subs.append({"slot": i, "topic": topic, "qos": qos})
+
+    resp_pub = _send_and_wait(ser, f"AT+MQTTPUB1{query_suffix}\r\n".encode('utf-8'), 1.5)
+    if b"ERROR" in resp_pub.upper() and query_suffix == "":
+        resp_pub = _send_and_wait(ser, b"AT+MQTTPUB1?\r\n", 1.5)
+        
+    parsed_pub = _parse_mqtt_query_response(resp_pub, "+MQTTPUB1")
+    hw_pub = None
+    if parsed_pub:
+        enable, topic, qos = parsed_pub
+        if enable == 1 and topic:
+            hw_pub = {"topic": topic, "qos": qos}
+
+    st.session_state.cell_hw_subs = active_subs
+    st.session_state.cell_hw_pub = hw_pub
+
+    # Also update the primary active_sub for backward compatibility
+    if active_subs:
+        st.session_state.cell_active_sub = active_subs[0]["topic"]
+        st.session_state.cell_active_qos = active_subs[0]["qos"]
+    else:
+        st.session_state.cell_active_sub = None
+        st.session_state.cell_active_qos = 0
+
+    count = len(active_subs)
+    pub_info = f", PUB: {hw_pub['topic']}" if hw_pub else ""
+    st.toast(f"HW synced: {count} active subscription(s){pub_info}", icon="✅")
+
+# ─── Hardware State Sync ──────────────────────────────────────────────────────
+def handle_sync_hw_state():
+    """Manual sync triggered from UI."""
+    ser = st.session_state.cell_serial
+    if not ser or not ser.is_open:
+        st.toast("COM not connected.", icon="⚠️")
+        return
+
+    time.sleep(1.0)
+    if not _enter_at_mode(ser):
+        st.toast("Failed to enter AT mode.", icon="❌")
+        return
+
+    _read_hw_state_in_at_mode(ser)
+    _send_and_wait(ser, b'ATO\r\n', 1.0)
