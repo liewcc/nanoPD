@@ -4,25 +4,77 @@ import paho.mqtt.client as mqtt
 from utils.style_utils import apply_global_css
 from utils.config_utils import load_ui_config
 from utils import cellular_mqtt
+import os
+from utils.config_utils import load_ui_config, save_ui_config, load_mqtt_config, save_mqtt_config
+
+def save_current_mqtt_config():
+    def get_val(state_key, cfg_key, default_val):
+        if state_key in st.session_state:
+            return st.session_state[state_key]
+        return st.session_state.mqtt_cfg.get(cfg_key, default_val)
+
+    cfg = {
+        "internet_host": get_val("cfg_broker", "internet_host", ""),
+        "internet_port": get_val("cfg_port", "internet_port", 1883),
+        "internet_cid": get_val("cfg_cid", "internet_cid", ""),
+        "internet_user": get_val("cfg_user", "internet_user", ""),
+        "internet_pwd": get_val("cfg_pwd", "internet_pwd", ""),
+        "internet_sub_topic": get_val("cfg_sub_topic", "internet_sub_topic", ""),
+        "internet_sub_qos": get_val("cfg_sub_qos", "internet_sub_qos", 0),
+        "internet_pub_topic": get_val("cfg_pub_topic", "internet_pub_topic", ""),
+        "internet_pub_qos": get_val("cfg_pub_qos", "internet_pub_qos", 0),
+        "internet_pub_payload": get_val("cfg_pub_payload", "internet_pub_payload", ""),
+        "cellular_ip": get_val("prov_ip", "cellular_ip", ""),
+        "cellular_port": get_val("prov_port", "cellular_port", ""),
+        "cellular_cid": get_val("prov_cid", "cellular_cid", ""),
+        "cellular_user": get_val("prov_user", "cellular_user", ""),
+        "cellular_pwd": get_val("prov_pwd", "cellular_pwd", ""),
+        "cellular_sub_topic": get_val("prov_sub", "cellular_sub_topic", ""),
+        "cellular_sub_qos": get_val("prov_sub_qos", "cellular_sub_qos", 0),
+        "cellular_pub_topic": get_val("prov_pub", "cellular_pub_topic", ""),
+        "cellular_pub_qos": get_val("prov_pub_qos", "cellular_pub_qos", 0),
+        "cellular_payload": get_val("cell_payload", "cellular_payload", ""),
+        "mqtt_subscriptions": st.session_state.get("mqtt_subscriptions", st.session_state.mqtt_cfg.get("mqtt_subscriptions", {})),
+        "cell_active_sub": st.session_state.get("cell_active_sub", st.session_state.mqtt_cfg.get("cell_active_sub", "")),
+        "cell_active_qos": st.session_state.get("cell_active_qos", st.session_state.mqtt_cfg.get("cell_active_qos", 0))
+    }
+    st.session_state.mqtt_cfg = cfg
+    save_mqtt_config(cfg)
 
 # ─── Session State Initialization ───────────────────────────────────────────
 if "ui_cfg" not in st.session_state:
     st.session_state.ui_cfg = load_ui_config()
 
+# Load MQTT configuration from config.json
+if "mqtt_cfg" not in st.session_state:
+    st.session_state.mqtt_cfg = load_mqtt_config()
+
 if 'mqtt_logs' not in st.session_state:
     st.session_state.mqtt_logs = []
+    log_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Internet_MQTT.log"))
+    if os.path.exists(log_file):
+        try:
+            with open(log_file, "r", encoding="utf-8") as f:
+                lines = [line.strip() for line in f.readlines() if line.strip()]
+                st.session_state.mqtt_logs = lines[-100:]
+        except:
+            pass
 if 'mqtt_client' not in st.session_state:
     st.session_state.mqtt_client = None
 if 'mqtt_subscriptions' not in st.session_state:
-    st.session_state.mqtt_subscriptions = {}
+    st.session_state.mqtt_subscriptions = st.session_state.mqtt_cfg.get("mqtt_subscriptions", {})
 if 'mqtt_auto_refresh' not in st.session_state:
     st.session_state.mqtt_auto_refresh = False
 if 'mqtt_shared_state' not in st.session_state:
     st.session_state.mqtt_shared_state = {"status": "disconnected"}
 
-
 # Initialize Cellular MQTT state
 cellular_mqtt.init_state()
+
+if 'cell_active_sub' not in st.session_state:
+    st.session_state.cell_active_sub = st.session_state.mqtt_cfg.get("cell_active_sub", "")
+if 'cell_active_qos' not in st.session_state:
+    st.session_state.cell_active_qos = st.session_state.mqtt_cfg.get("cell_active_qos", 0)
 
 # ─── Apply Global CSS ───────────────────────────────────────────────────────
 apply_global_css(
@@ -79,7 +131,8 @@ def handle_connect(host, port, cid, user, pwd):
         shared_state = {
             "logs": st.session_state.mqtt_logs,
             "subscriptions": st.session_state.mqtt_subscriptions,
-            "state_obj": st.session_state.mqtt_shared_state
+            "state_obj": st.session_state.mqtt_shared_state,
+            "log_file": os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Internet_MQTT.log"))
         }
         client.user_data_set(shared_state)
         if user:
@@ -107,7 +160,14 @@ def handle_connect(host, port, cid, user, pwd):
             t = time.localtime()
             ms = int((time.time() % 1) * 1000)
             t_str = f"[{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}.{ms:03d}]"
-            userdata["logs"].append(f"{t_str} [📥 {msg.topic}]: {payload}")
+            log_entry = f"{t_str} [📥 {msg.topic}]: {payload}"
+            userdata["logs"].append(log_entry)
+            # Append to log file
+            try:
+                with open(userdata.get("log_file", "Internet_MQTT.log"), "a", encoding="utf-8") as f:
+                    f.write(log_entry + "\n")
+            except Exception:
+                pass
             if len(userdata["logs"]) > 100:
                 userdata["logs"].pop(0)
 
@@ -119,6 +179,7 @@ def handle_connect(host, port, cid, user, pwd):
         st.session_state.mqtt_client = client
         st.session_state.mqtt_auto_refresh = True
         st.toast(f"Connecting to {host}:{port}...", icon="⏳")
+        save_current_mqtt_config()
     except Exception as e:
         st.toast(f"Connection failed: {e}", icon="❌")
 
@@ -139,6 +200,7 @@ def handle_subscribe(topic, qos):
         st.session_state.mqtt_client.subscribe(topic, qos)
         st.session_state.mqtt_subscriptions[topic] = qos
         st.toast(f"Subscribed to {topic}", icon="✅")
+        save_current_mqtt_config()
     else:
         st.session_state.mqtt_subscriptions[topic] = qos
         st.toast(f"Topic saved. Will subscribe when connected.", icon="ℹ️")
@@ -152,6 +214,7 @@ def handle_unsubscribe(topic):
     if topic in st.session_state.mqtt_subscriptions:
         del st.session_state.mqtt_subscriptions[topic]
         st.toast(f"Unsubscribed from {topic}", icon="✅")
+        save_current_mqtt_config()
 
 def handle_publish(topic, qos, payload):
     if not topic:
@@ -166,11 +229,13 @@ def handle_publish(topic, qos, payload):
         st.session_state.mqtt_logs.append(f"{t_str} [📤 {topic}]: {payload}")
         if len(st.session_state.mqtt_logs) > 100:
             st.session_state.mqtt_logs.pop(0)
+        save_current_mqtt_config()
     else:
         st.toast("Cannot publish: Not connected.", icon="❌")
 
 def handle_clear_logs():
     st.session_state.mqtt_logs.clear()
+    save_current_mqtt_config()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -189,20 +254,20 @@ with tab_internet:
             c_host, c_port, c_cid = st.columns([0.4, 0.2, 0.4])
             with c_host:
                 st.markdown('<p class="metric-label" style="margin:4px 0 0 0">HOST ADDRESS</p>', unsafe_allow_html=True)
-                broker = st.text_input("Host", value="202.59.9.164", key="cfg_broker", label_visibility="collapsed")
+                broker = st.text_input("Host", value=st.session_state.mqtt_cfg.get("internet_host", "202.59.9.164"), key="cfg_broker", label_visibility="collapsed")
             with c_port:
                 st.markdown('<p class="metric-label" style="margin:4px 0 0 0">PORT</p>', unsafe_allow_html=True)
-                port = st.number_input("Port", value=1883, min_value=1, max_value=65535, key="cfg_port", label_visibility="collapsed")
+                port = st.number_input("Port", value=st.session_state.mqtt_cfg.get("internet_port", 1883), min_value=1, max_value=65535, key="cfg_port", label_visibility="collapsed")
             with c_cid:
                 st.markdown('<p class="metric-label" style="margin:4px 0 0 0">CLIENT ID</p>', unsafe_allow_html=True)
-                client_id = st.text_input("Client ID", value="nanopd_mqtt_client", key="cfg_cid", label_visibility="collapsed")
+                client_id = st.text_input("Client ID", value=st.session_state.mqtt_cfg.get("internet_cid", "nanopd_mqtt_client"), key="cfg_cid", label_visibility="collapsed")
             u_col, pw_col = st.columns(2)
             with u_col:
                 st.markdown('<p class="metric-label" style="margin:12px 0 0 0">USERNAME</p>', unsafe_allow_html=True)
-                username = st.text_input("Username", value="", key="cfg_user", label_visibility="collapsed", placeholder="Optional")
+                username = st.text_input("Username", value=st.session_state.mqtt_cfg.get("internet_user", ""), key="cfg_user", label_visibility="collapsed", placeholder="Optional")
             with pw_col:
                 st.markdown('<p class="metric-label" style="margin:12px 0 0 0">PASSWORD</p>', unsafe_allow_html=True)
-                password = st.text_input("Password", value="", type="password", key="cfg_pwd", label_visibility="collapsed", placeholder="Optional")
+                password = st.text_input("Password", value=st.session_state.mqtt_cfg.get("internet_pwd", ""), type="password", key="cfg_pwd", label_visibility="collapsed", placeholder="Optional")
             c1, c2, c3 = st.columns([0.4, 0.3, 0.3])
             with c1:
                 if not is_connected:
@@ -224,10 +289,10 @@ with tab_internet:
             s1, s2, s3 = st.columns([0.6, 0.15, 0.25])
             with s1:
                 st.markdown('<p class="metric-label" style="margin:4px 0 0 0">TOPIC</p>', unsafe_allow_html=True)
-                sub_topic = st.text_input("Sub Topic", value="nanopd/test/#", key="cfg_sub_topic", label_visibility="collapsed")
+                sub_topic = st.text_input("Sub Topic", value=st.session_state.mqtt_cfg.get("internet_sub_topic", "nanopd/test/#"), key="cfg_sub_topic", label_visibility="collapsed")
             with s2:
                 st.markdown('<p class="metric-label" style="margin:4px 0 0 0">QOS</p>', unsafe_allow_html=True)
-                sub_qos = st.selectbox("Sub QoS", [0, 1, 2], key="cfg_sub_qos", label_visibility="collapsed")
+                sub_qos = st.selectbox("Sub QoS", [0, 1, 2], key="cfg_sub_qos", label_visibility="collapsed", index=st.session_state.mqtt_cfg.get("internet_sub_qos", 0))
             with s3:
                 st.markdown('<p class="metric-label" style="margin:4px 0 0 0">&nbsp;</p>', unsafe_allow_html=True)
                 if st.button("➕ Subscribe", width="stretch", key="inet_sub"):
@@ -264,12 +329,12 @@ with tab_internet:
             pt, pq = st.columns([0.8, 0.2])
             with pt:
                 st.markdown('<p class="metric-label" style="margin:4px 0 0 0">TOPIC</p>', unsafe_allow_html=True)
-                pub_topic = st.text_input("Pub Topic", value="nanopd/test/pub", key="cfg_pub_topic", label_visibility="collapsed")
+                pub_topic = st.text_input("Pub Topic", value=st.session_state.mqtt_cfg.get("internet_pub_topic", "nanopd/test/pub"), key="cfg_pub_topic", label_visibility="collapsed")
             with pq:
                 st.markdown('<p class="metric-label" style="margin:4px 0 0 0">QOS</p>', unsafe_allow_html=True)
-                pub_qos = st.selectbox("Pub QoS", [0, 1, 2], key="cfg_pub_qos", label_visibility="collapsed")
+                pub_qos = st.selectbox("Pub QoS", [0, 1, 2], key="cfg_pub_qos", label_visibility="collapsed", index=st.session_state.mqtt_cfg.get("internet_pub_qos", 0))
             st.markdown('<p class="metric-label" style="margin:12px 0 0 0">PAYLOAD</p>', unsafe_allow_html=True)
-            pub_payload = st.text_input("Payload", value='{"msg": "Hello NanoPD"}', key="cfg_pub_payload", label_visibility="collapsed")
+            pub_payload = st.text_input("Payload", value=st.session_state.mqtt_cfg.get("internet_pub_payload", '{"msg": "Hello NanoPD"}'), key="cfg_pub_payload", label_visibility="collapsed")
             st.button("📤 Publish", width="stretch", type="primary", disabled=not is_connected, on_click=handle_publish, args=(pub_topic, pub_qos, pub_payload), key="inet_pub")
 
 # ─── TAB 2: CELLULAR MQTT ───────────────────────────────────────────────────
@@ -305,26 +370,27 @@ with tab_cellular:
             pi_ip, pi_port, pi_cid = st.columns([0.4, 0.2, 0.4])
             with pi_ip:
                 st.markdown('<p class="metric-label" style="margin:4px 0 0 0">BROKER IP</p>', unsafe_allow_html=True)
-                prov_ip = st.text_input("Broker IP", value="202.59.9.164", key="prov_ip", label_visibility="collapsed")
+                prov_ip = st.text_input("Broker IP", value=st.session_state.mqtt_cfg.get("cellular_ip", "202.59.9.164"), key="prov_ip", label_visibility="collapsed")
             with pi_port:
                 st.markdown('<p class="metric-label" style="margin:4px 0 0 0">PORT</p>', unsafe_allow_html=True)
-                prov_port = st.text_input("Broker Port", value="1883", key="prov_port", label_visibility="collapsed")
+                prov_port = st.text_input("Broker Port", value=st.session_state.mqtt_cfg.get("cellular_port", "1883"), key="prov_port", label_visibility="collapsed")
             with pi_cid:
                 st.markdown('<p class="metric-label" style="margin:4px 0 0 0">CLIENT ID</p>', unsafe_allow_html=True)
-                prov_cid = st.text_input("DTU Client ID", value="nano_dtu_001", key="prov_cid", label_visibility="collapsed")
+                prov_cid = st.text_input("DTU Client ID", value=st.session_state.mqtt_cfg.get("cellular_cid", "nano_dtu_001"), key="prov_cid", label_visibility="collapsed")
             pu, pp = st.columns(2)
             with pu:
                 st.markdown('<p class="metric-label" style="margin:12px 0 0 0">USERNAME</p>', unsafe_allow_html=True)
-                prov_user = st.text_input("DTU User", value="", key="prov_user", label_visibility="collapsed", placeholder="Optional")
+                prov_user = st.text_input("DTU User", value=st.session_state.mqtt_cfg.get("cellular_user", ""), key="prov_user", label_visibility="collapsed", placeholder="Optional")
             with pp:
                 st.markdown('<p class="metric-label" style="margin:12px 0 0 0">PASSWORD</p>', unsafe_allow_html=True)
-                prov_pwd = st.text_input("DTU Pwd", value="", type="password", key="prov_pwd", label_visibility="collapsed", placeholder="Optional")
+                prov_pwd = st.text_input("DTU Pwd", value=st.session_state.mqtt_cfg.get("cellular_pwd", ""), type="password", key="prov_pwd", label_visibility="collapsed", placeholder="Optional")
             st.button(
                 "🚀 One-Click Provision",
                 width="stretch", type="primary",
                 disabled=not cell_connected or st.session_state.cell_provisioning,
-                on_click=cellular_mqtt.handle_provision,
-                key="cell_provision"
+                on_click=lambda: [save_current_mqtt_config(), cellular_mqtt.handle_provision()],
+                key="cell_provision",
+                help="Will also save current config"
             )
 
         # SUBSCRIPTION MANAGEMENT
@@ -333,19 +399,14 @@ with tab_cellular:
             cs1, cs2, cs3 = st.columns([0.6, 0.15, 0.25])
             with cs1:
                 st.markdown('<p class="metric-label" style="margin:4px 0 0 0">TOPIC</p>', unsafe_allow_html=True)
-                prov_sub = st.text_input("DTU Sub", value="nanopd/dtu/rx", key="prov_sub", label_visibility="collapsed")
+                prov_sub = st.text_input("DTU Sub", value=st.session_state.mqtt_cfg.get("cellular_sub_topic", "nanopd/dtu/rx"), key="prov_sub", label_visibility="collapsed")
             with cs2:
                 st.markdown('<p class="metric-label" style="margin:4px 0 0 0">QOS</p>', unsafe_allow_html=True)
-                prov_sub_qos = st.selectbox("Sub QoS", [0, 1, 2], key="prov_sub_qos", label_visibility="collapsed")
+                prov_sub_qos = st.selectbox("Sub QoS", [0, 1, 2], key="prov_sub_qos", label_visibility="collapsed", index=st.session_state.mqtt_cfg.get("cellular_sub_qos", 0))
             with cs3:
                 st.markdown('<p class="metric-label" style="margin:4px 0 0 0">&nbsp;</p>', unsafe_allow_html=True)
                 st.button("➕ Subscribe", width="stretch", disabled=not cell_connected, key="cell_sub_btn", on_click=cellular_mqtt.handle_dtu_update_sub, args=(prov_sub, prov_sub_qos))
-            
-            if 'cell_active_sub' not in st.session_state:
-                st.session_state.cell_active_sub = "nanopd/dtu/rx"
-            if 'cell_active_qos' not in st.session_state:
-                st.session_state.cell_active_qos = 0
-            
+
             active_dtu_sub = st.session_state.get("cell_active_sub")
             active_dtu_qos = st.session_state.get("cell_active_qos")
             
@@ -377,6 +438,13 @@ with tab_cellular:
             cell_log_placeholder = st.empty()
             cell_lines = st.session_state.cell_logs if st.session_state.cell_logs else [""]
             cell_log_placeholder.text_area("DTU Logs", value="\n".join(cell_lines), height=350, label_visibility="collapsed", disabled=False)
+            # Ensure logs are persisted to file on display refresh
+            try:
+                log_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cellular_MQTT.log"))
+                with open(log_path, "w", encoding="utf-8") as f:
+                    f.writelines([line + "\n" for line in cell_lines])
+            except Exception:
+                pass
 
         # Send data through DTU (transparent mode)
         with st.container(border=True):
@@ -384,12 +452,12 @@ with tab_cellular:
             pt, pq = st.columns([0.8, 0.2])
             with pt:
                 st.markdown('<p class="metric-label" style="margin:4px 0 0 0">TOPIC (Provisioned)</p>', unsafe_allow_html=True)
-                prov_pub = st.text_input("DTU Pub", value="nanopd/dtu/tx", key="prov_pub", label_visibility="collapsed")
+                prov_pub = st.text_input("DTU Pub", value=st.session_state.mqtt_cfg.get("cellular_pub_topic", "nanopd/dtu/tx"), key="prov_pub", label_visibility="collapsed")
             with pq:
                 st.markdown('<p class="metric-label" style="margin:4px 0 0 0">QOS</p>', unsafe_allow_html=True)
-                st.selectbox("Pub QoS", [0, 1, 2], key="prov_pub_qos", label_visibility="collapsed")
+                st.selectbox("Pub QoS", [0, 1, 2], key="prov_pub_qos", label_visibility="collapsed", index=st.session_state.mqtt_cfg.get("cellular_pub_qos", 0))
             st.markdown('<p class="metric-label" style="margin:12px 0 0 0">PAYLOAD</p>', unsafe_allow_html=True)
-            cell_payload = st.text_input("Payload", value="Hello from DTU!", key="cell_payload", label_visibility="collapsed")
+            cell_payload = st.text_input("Payload", value=st.session_state.mqtt_cfg.get("cellular_payload", "Hello from DTU!"), key="cell_payload", label_visibility="collapsed")
             ca1, ca2 = st.columns([0.7, 0.3])
             with ca1:
                 st.button("📤 Publish", width="stretch", type="primary", disabled=not cell_connected, key="cell_send", on_click=cellular_mqtt.handle_send_data)
@@ -397,6 +465,8 @@ with tab_cellular:
                 if st.button("🔁 Auto RX", width="stretch", type="primary" if st.session_state.cell_auto_refresh else "secondary", key="cell_auto", help="Auto-refresh to read serial"):
                     st.session_state.cell_auto_refresh = not st.session_state.cell_auto_refresh
                     st.rerun()
+                    # Save cellular config after toggle
+                    save_current_mqtt_config()
 
 # ─── Auto-Read Loops ─────────────────────────────────────────────────────────
 needs_rerun = False
@@ -447,3 +517,6 @@ st.html(f"""
     parentWin.addEventListener('resize', updateLayoutAndScroll);
     </script>
 """)
+
+# Automatically save the current configuration to config.json at the end of each rerun
+save_current_mqtt_config()

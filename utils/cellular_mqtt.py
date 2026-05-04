@@ -19,6 +19,17 @@ def init_state():
     for k, v in _DEFAULTS.items():
         if k not in st.session_state:
             st.session_state[k] = v
+            
+    if len(st.session_state.cell_logs) == 0:
+        import os
+        log_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cellular_MQTT.log"))
+        if os.path.exists(log_file):
+            try:
+                with open(log_file, "r", encoding="utf-8") as f:
+                    lines = [line.strip() for line in f.readlines() if line.strip()]
+                    st.session_state.cell_logs = lines[-200:]
+            except:
+                pass
 
 def get_com_ports():
     return [p.device for p in serial.tools.list_ports.comports()]
@@ -156,10 +167,7 @@ def handle_read_serial():
 def handle_clear_logs():
     st.session_state.cell_logs.clear()
 
-# ─── One-Click DTU Provisioning ──────────────────────────────────────────────
-def handle_provision():
-    """Run the full ATK-D40-B MQTT provisioning sequence."""
-    ser = st.session_state.cell_serial
+
 def _enter_at_mode(ser):
     """Enter AT command mode safely."""
     ser.reset_input_buffer()
