@@ -256,7 +256,7 @@ with tab_internet:
             with bc:
                 st.button("🗑️ Clear", width='stretch', key="clear_mqtt_log", on_click=handle_clear_logs)
             inet_log_placeholder = st.empty()
-            lines = st.session_state.mqtt_logs if st.session_state.mqtt_logs else ["(No messages received)"]
+            lines = st.session_state.mqtt_logs if st.session_state.mqtt_logs else [""]
             inet_log_placeholder.text_area("Logs", value="\n".join(lines), height=350, label_visibility="collapsed", disabled=False)
 
         with st.container(border=True):
@@ -375,7 +375,7 @@ with tab_cellular:
             with bc2:
                 st.button("🗑️ Clear", width='stretch', key="clear_cell_log", on_click=cellular_mqtt.handle_clear_logs)
             cell_log_placeholder = st.empty()
-            cell_lines = st.session_state.cell_logs if st.session_state.cell_logs else ["(No messages received)"]
+            cell_lines = st.session_state.cell_logs if st.session_state.cell_logs else [""]
             cell_log_placeholder.text_area("DTU Logs", value="\n".join(cell_lines), height=350, label_visibility="collapsed", disabled=False)
 
         # Send data through DTU (transparent mode)
