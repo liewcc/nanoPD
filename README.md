@@ -15,6 +15,7 @@
   - [XIAO RP2350 Telemetry Research](guides/xiao_rp2350_telemetry_research.md)
   - [XIAO RP2350 Reset Behavior](guides/xiao_rp2350_reset_behavior.md)
   - [Cellular MQTT (ATK-D40-B) Features](guides/Cellular_MQTT_Features.md)
+  - [RS485 Decoder & Modbus Analysis](guides/RS485_Modbus_Analysis_Guide.md)
 - [💡 Examples](#-examples)
   - [Hardware LED Control Guide](guides/Hardware_LED_Guide.md)
 
@@ -74,6 +75,7 @@ Detailed research and interpretation manuals for NanoPD 2.0 components:
 *   **[XIAO RP2350 Telemetry Research](guides/xiao_rp2350_telemetry_research.md)**: Deep dive into the hardware nuances, ADC ghosting, and voltage sensing logic.
 *   **[XIAO RP2350 Reset Behavior](guides/xiao_rp2350_reset_behavior.md)**: Official documentation detailing why the RST button and USB power cycles are identical on hardware level.
 *   **[Cellular MQTT (ATK-D40-B) Features](guides/Cellular_MQTT_Features.md)**: Documentation on the systematized layout, dynamic AT command management, and pure hardware communication logging for the DTU module.
+*   **[RS485 Decoder & Modbus Analysis](guides/RS485_Modbus_Analysis_Guide.md)**: Details on the RS485 serial monitor, COM port occupancy logic, and the interactive CSV-driven Modbus register mapping dashboard.
 
 ---
 
