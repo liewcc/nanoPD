@@ -146,9 +146,8 @@ def handle_read_serial():
     try:
         if ser.in_waiting > 0:
             data = ser.read(ser.in_waiting)
-            for line in data.replace(b'\r', b'').split(b'\n'):
-                if line:
-                    _log_raw("RX", line)
+            if data:
+                _log_raw("RX", data)
     except:
         pass
 
@@ -457,14 +456,14 @@ def handle_publish_modbus():
         ser.write(frame)
         ser.flush()
         
-        _log(f"TX>> [Modbus] {frame.hex(' ').upper()}")
+        _log_raw("TX", frame)
 
         # Brief wait for any echo/response
         time.sleep(0.5)
         if ser.in_waiting > 0:
             rx_data = ser.read(ser.in_waiting)
             if rx_data:
-                _log(f"RX<< {rx_data.hex(' ').upper()}")
+                _log_raw("RX", rx_data)
         
         st.session_state.cell_auto_refresh = True
         st.toast("Modbus frame sent to DTU", icon="📤")
