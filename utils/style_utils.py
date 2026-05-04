@@ -21,7 +21,7 @@ def _sidebar_occupied_ports_panel():
         if occupied_ports:
             ports_str = ", ".join(occupied_ports)
             st.markdown(f"""
-                <div style='background:#fffbeb; border:1px solid #fde68a; color:#92400e; padding:12px; border-radius:8px; margin-bottom:1rem; font-size:0.85em;'>
+                <div style='background:#fffbeb; border:1px solid #fde68a; color:#92400e; padding:12px; border-radius:8px; margin-bottom:0; margin-top:-14px; font-size:0.85em;'>
                     <div style='font-weight:700; display:flex; align-items:center; gap:6px;'>
                         🔒 COM PORT IN USE
                     </div>
@@ -30,6 +30,24 @@ def _sidebar_occupied_ports_panel():
                     </div>
                 </div>
             """, unsafe_allow_html=True)
+
+@st.fragment(run_every=3)
+def render_mqtt_status_panel():
+    state_obj = st.session_state.get("mqtt_shared_state", {})
+    if state_obj.get("status") == "connected":
+        host = st.session_state.get("mqtt_cfg", {}).get("internet_host", "Unknown Broker")
+        st.markdown(f"""
+            <div style='background:#eff6ff; border:1px solid #bfdbfe; color:#1e3a8a; padding:12px; border-radius:8px; margin-bottom:0; margin-top:-14px; font-size:0.85em;'>
+                <div style='font-weight:700; display:flex; align-items:center; gap:6px;'>
+                    🌐 INTERNET MQTT ACTIVE
+                </div>
+                <div style='margin-top:4px; color:#1d4ed8; line-height:1.3;'>
+                    Background connection running.<br>Broker: <b>{host}</b>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.empty()
 
 def get_global_styles(
     title_size="1.5rem",
@@ -147,6 +165,14 @@ def get_global_styles(
     [data-testid="stMarkdownContainer"] > p:last-child {{
         margin-bottom: 0 !important;
     }}
+
+    /* SIDEBAR FIX: Compact the gaps between consecutive status panels */
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlockBorderWrapper"] {{
+        margin-top: -8px !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlockBorderWrapper"]:first-child {{
+        margin-top: 0 !important;
+    }}
     """
 
 def apply_global_css(
@@ -165,7 +191,7 @@ def apply_global_css(
         with st.sidebar:
             if is_mounted():
                 st.markdown("""
-                    <div style='background:#fef2f2; border:1px solid #fee2e2; color:#991b1b; padding:12px; border-radius:8px; margin-bottom:1rem; font-size:0.85em;'>
+                    <div style='background:#fef2f2; border:1px solid #fee2e2; color:#991b1b; padding:12px; border-radius:8px; margin-bottom:0; margin-top:-14px; font-size:0.85em;'>
                         <div style='font-weight:700; display:flex; align-items:center; gap:6px;'>
                             🔒 SERIAL PORT BUSY
                         </div>
@@ -176,7 +202,7 @@ def apply_global_css(
                 """, unsafe_allow_html=True)
             elif not is_rp2350_connected():
                 st.markdown("""
-                    <div style='background:#f8fafc; border:1px solid #e2e8f0; color:#475569; padding:12px; border-radius:8px; margin-bottom:1rem; font-size:0.85em;'>
+                    <div style='background:#f8fafc; border:1px solid #e2e8f0; color:#475569; padding:12px; border-radius:8px; margin-bottom:0; margin-top:-14px; font-size:0.85em;'>
                         <div style='font-weight:700; display:flex; align-items:center; gap:6px;'>
                             🔌 USB DISCONNECTED
                         </div>
@@ -187,7 +213,7 @@ def apply_global_css(
                 """, unsafe_allow_html=True)
             else:
                 st.markdown("""
-                    <div style='background:#f0fdf4; border:1px solid #dcfce7; color:#166534; padding:12px; border-radius:8px; margin-bottom:1rem; font-size:0.85em;'>
+                    <div style='background:#f0fdf4; border:1px solid #dcfce7; color:#166534; padding:12px; border-radius:8px; margin-bottom:0; margin-top:-14px; font-size:0.85em;'>
                         <div style='font-weight:700; display:flex; align-items:center; gap:6px;'>
                             ✅ SERIAL PORT READY
                         </div>

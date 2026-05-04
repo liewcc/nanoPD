@@ -163,3 +163,6 @@ def com_ports_panel():
             st.markdown("<div style='font-size: 14px; color: #64748b;'>No COM ports detected.</div>", unsafe_allow_html=True)
 
 com_ports_panel()
+
+from utils.style_utils import render_mqtt_status_panel
+render_mqtt_status_panel()

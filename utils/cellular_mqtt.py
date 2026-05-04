@@ -13,6 +13,14 @@ _DEFAULTS = {
     "cell_logs": [],
     "cell_auto_refresh": False,
     "cell_provisioning": False,
+    "cell_modbus_id_dec": "1",
+    "cell_modbus_id_hex": "0x01",
+    "cell_modbus_addr_dec": "0",
+    "cell_modbus_addr_hex": "0x0000",
+    "cell_modbus_qty": 1,
+    "cell_modbus_func": "03 (Read Holding Registers)",
+    "cell_task_cycle": 1,
+    "cell_task_interval": 100,
 }
 
 def init_state():
@@ -33,23 +41,19 @@ def init_state():
 def get_com_ports():
     return [p.device for p in serial.tools.list_ports.comports()]
 
-def _log(msg):
-    t = time.localtime()
-    ms = int((time.time() % 1) * 1000)
-    ts = f"[{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}.{ms:03d}]"
-    st.session_state.cell_logs.append(f"{ts} {msg}")
+def _log_raw(direction: str, data: bytes):
+    st.session_state.cell_logs.append({
+        "time": time.time(),
+        "dir": direction,
+        "data": data
+    })
     if len(st.session_state.cell_logs) > 200:
         st.session_state.cell_logs.pop(0)
 
 def _send_and_wait(ser, data: bytes, wait: float = 1.5, hide_tx: bool = False) -> bytes:
     ser.reset_input_buffer()
     if not hide_tx and data:
-        try:
-            tx_text = data.decode('utf-8', errors='replace').strip()
-        except:
-            tx_text = data.hex()
-        if tx_text:
-            _log(f"TX>> {tx_text}")
+        _log_raw("TX", data)
 
     ser.write(data)
     ser.flush()
@@ -66,15 +70,9 @@ def _send_and_wait(ser, data: bytes, wait: float = 1.5, hide_tx: bool = False) -
         time.sleep(0.01)
     
     if not hide_tx and buf:
-        try:
-            rx_text = buf.decode('utf-8', errors='replace').strip()
-        except:
-            rx_text = buf.hex()
-        if rx_text:
-            for line in rx_text.splitlines():
-                line = line.strip()
-                if line:
-                    _log(f"RX<< {line}")
+        for line in buf.replace(b'\r', b'').split(b'\n'):
+            if line:
+                _log_raw("RX", line)
     return bytes(buf)
 
 # ─── COM Actions ─────────────────────────────────────────────────────────────
@@ -111,9 +109,10 @@ def handle_send_data(text=None):
         return
     try:
         ser.reset_input_buffer()
-        ser.write(text.encode('utf-8'))
+        raw_data = text.encode('utf-8')
+        ser.write(raw_data)
         ser.flush()
-        _log(f"TX>> {text}")
+        _log_raw("TX", raw_data)
 
         # Wait briefly and read any echo / response from DTU
         time.sleep(0.5)
@@ -130,14 +129,9 @@ def handle_send_data(text=None):
             time.sleep(0.01)
 
         if rx_buf:
-            try:
-                rx_text = rx_buf.decode('utf-8', errors='replace').strip()
-            except:
-                rx_text = rx_buf.hex()
-            if rx_text:
-                for line in rx_text.splitlines():
-                    if line.strip():
-                        _log(f"RX<< {line.strip()}")
+            for line in rx_buf.replace(b'\r', b'').split(b'\n'):
+                if line:
+                    _log_raw("RX", line)
 
         # Auto-enable refresh so user sees incoming messages
         st.session_state.cell_auto_refresh = True
@@ -152,14 +146,9 @@ def handle_read_serial():
     try:
         if ser.in_waiting > 0:
             data = ser.read(ser.in_waiting)
-            try:
-                text = data.decode('utf-8', errors='replace').strip()
-            except:
-                text = data.hex()
-            if text:
-                for line in text.splitlines():
-                    if line.strip():
-                        _log(f"RX<< {line.strip()}")
+            for line in data.replace(b'\r', b'').split(b'\n'):
+                if line:
+                    _log_raw("RX", line)
     except:
         pass
 
@@ -177,7 +166,7 @@ def handle_clear_logs():
 def _enter_at_mode(ser):
     """Enter AT command mode safely."""
     ser.reset_input_buffer()
-    _log("TX>> +++")
+    _log_raw("TX", b"+++")
     ser.write(b'+++')
     ser.flush()
     time.sleep(0.5)
@@ -189,17 +178,17 @@ def _enter_at_mode(ser):
         time.sleep(0.05)
     
     if rx:
-        _log(f"RX<< {rx.decode('utf-8', errors='replace').strip()}")
+        _log_raw("RX", rx)
 
     if b'atk' in rx.lower():
-        _log("TX>> ATK")
+        _log_raw("TX", b"ATK")
         ser.write(b'ATK')
         ser.flush()
         time.sleep(0.5)
         if ser.in_waiting > 0:
             rx2 = ser.read(ser.in_waiting)
             if rx2:
-                _log(f"RX<< {rx2.decode('utf-8', errors='replace').strip()}")
+                _log_raw("RX", rx2)
         return True
     else:
         resp = _send_and_wait(ser, b'AT\r\n', 1.0)
@@ -418,3 +407,186 @@ def handle_sync_hw_state():
 
     _read_hw_state_in_at_mode(ser)
     _send_and_wait(ser, b'ATO\r\n', 1.0)
+
+
+def calculate_crc16(data: bytes) -> bytes:
+    """Standard Modbus RTU CRC16."""
+    crc = 0xFFFF
+    for b in data:
+        crc ^= b
+        for _ in range(8):
+            if crc & 1:
+                crc = (crc >> 1) ^ 0xA001
+            else:
+                crc >>= 1
+    return crc.to_bytes(2, byteorder='little')
+
+
+def handle_publish_modbus():
+    """Generates a Modbus RTU frame and publishes it via the DTU's MQTT transparent mode."""
+    ser = st.session_state.cell_serial
+    if not ser or not ser.is_open:
+        st.toast("COM not connected.", icon="⚠️")
+        return
+
+    try:
+        # Get values from session state
+        dev_id_str = st.session_state.get("cell_modbus_id_dec", "1")
+        dev_id = int(dev_id_str) if dev_id_str else 1
+        
+        func_selection = st.session_state.get("cell_modbus_func", "03")
+        func_code = int(func_selection.split(" ")[0], 16)
+        
+        addr_str = st.session_state.get("cell_modbus_addr_dec", "0")
+        start_addr = int(addr_str) if addr_str else 0
+        
+        quantity = int(st.session_state.get("cell_modbus_qty", 1))
+
+        # Build frame
+        frame = bytearray()
+        frame.append(dev_id)
+        frame.append(func_code)
+        frame.append((start_addr >> 8) & 0xFF)
+        frame.append(start_addr & 0xFF)
+        frame.append((quantity >> 8) & 0xFF)
+        frame.append(quantity & 0xFF)
+        frame.extend(calculate_crc16(frame))
+
+        # Send to serial (DTU in MQTT mode will publish this payload)
+        ser.reset_input_buffer()
+        ser.write(frame)
+        ser.flush()
+        
+        _log(f"TX>> [Modbus] {frame.hex(' ').upper()}")
+
+        # Brief wait for any echo/response
+        time.sleep(0.5)
+        if ser.in_waiting > 0:
+            rx_data = ser.read(ser.in_waiting)
+            if rx_data:
+                _log(f"RX<< {rx_data.hex(' ').upper()}")
+        
+        st.session_state.cell_auto_refresh = True
+        st.toast("Modbus frame sent to DTU", icon="📤")
+    except Exception as e:
+        st.toast(f"Modbus Error: {e}", icon="❌")
+
+
+def handle_setup_dtu_modbus():
+    """Configure DTU for Modbus over MQTT mode using AT commands."""
+    ser = st.session_state.cell_serial
+    if not ser or not ser.is_open:
+        st.toast("COM not connected.", icon="⚠️")
+        return
+    
+    st.toast("Setting up DTU for Modbus...", icon="⏳")
+    if _enter_at_mode(ser):
+        # 1. Ensure MQTT work mode
+        _send_and_wait(ser, b'AT+WORK="MQTT"\r\n', 1.0)
+        # 2. Enable Modbus RTU gateway mode (converts serial RTU to MQTT/Network)
+        # Based on ATK-D40 documentation, this enables CRC verification and protocol adaptation.
+        _send_and_wait(ser, b'AT+MODBUSRTU=1\r\n', 1.0)
+        # 3. Exit back to transparent/working mode
+        _send_and_wait(ser, b'ATO\r\n', 1.0)
+        st.toast("DTU Setup Complete: MQTT + Modbus Mode", icon="✅")
+    else:
+        st.toast("Failed to enter AT mode", icon="❌")
+
+
+def handle_check_polling_list():
+    """Query DTU for all configured polling tasks via AT+COLLECT"""
+    ser = st.session_state.cell_serial
+    if not ser or not ser.is_open:
+        st.toast("COM not connected.", icon="⚠️")
+        return
+        
+    st.toast("Reading polling list (Debug Mode)...", icon="⏳")
+    if "cell_polling_editor" in st.session_state:
+        del st.session_state["cell_polling_editor"]
+        
+    if _enter_at_mode(ser):
+        # 0. Read TASKTIME
+        resp_time = _send_and_wait(ser, b'AT+TASKTIME\r\n', 1.0)
+        time_text = resp_time.decode('utf-8', errors='replace')
+        for line in time_text.splitlines():
+            line = line.strip()
+            if line.upper().startswith('+TASKTIME:'):
+                val = line.split(":", 1)[1].strip()
+                parts = val.split(',')
+                if len(parts) == 2:
+                    try:
+                        st.session_state.cell_task_cycle = int(parts[0].replace('"', '').strip())
+                        st.session_state.cell_task_interval = int(parts[1].replace('"', '').strip())
+                    except ValueError:
+                        pass
+
+        # 1. Read how many polling scripts are active
+        resp = _send_and_wait(ser, b'AT+TRANSPOLLNUM\r\n', 1.0)
+        
+        text = resp.decode('utf-8', errors='replace')
+        num = 0
+        for line in text.splitlines():
+            line = line.strip()
+            if line.upper().startswith('+TRANSPOLLNUM:'):
+                val = line.split(":", 1)[1].strip().replace('"', '')
+                try:
+                    num = int(val)
+                except ValueError:
+                    pass
+
+        polling_list = []
+        # 2. Read each script up to the active count
+        if num > 0:
+            for i in range(1, num + 1):
+                c_resp = _send_and_wait(ser, f'AT+TRANSCMD{i}\r\n'.encode('utf-8'), 0.5)
+                c_text = c_resp.decode('utf-8', errors='replace')
+                for line in c_text.splitlines():
+                    line = line.strip()
+                    if line.upper().startswith(f'+TRANSCMD{i}:'):
+                        cmd_val = line.split(":", 1)[1].strip().replace('"', '')
+                        polling_list.append({"Index": str(i), "Command": cmd_val})
+                        break
+        
+        st.session_state.cell_polling_list = polling_list
+        _send_and_wait(ser, b'ATO\r\n', 1.0)
+        st.toast(f"Found {len(polling_list)} polling tasks.", icon="✅")
+    else:
+        st.toast("Failed to enter AT mode", icon="❌")
+
+
+def handle_send_polling_list(polling_list):
+    """Send configured polling tasks to DTU."""
+    ser = st.session_state.cell_serial
+    if not ser or not ser.is_open:
+        st.toast("COM not connected.", icon="⚠️")
+        return
+        
+    st.toast("Sending polling list...", icon="⏳")
+    if _enter_at_mode(ser):
+        count = 0
+        for item in polling_list:
+            cmd = str(item.get("Command", "")).strip()
+            if cmd and cmd.lower() != "nan" and cmd.lower() != "none":
+                count += 1
+                # The hardware expects double quotes around the command string
+                at_cmd = f'AT+TRANSCMD{count}="{cmd}"\r\n'.encode('utf-8')
+                _send_and_wait(ser, at_cmd, 1.0)
+                time.sleep(0.5)  # Crucial delay for DTU to complete flash write
+                
+        # Update the total active polling number
+        num_cmd = f'AT+TRANSPOLLNUM="{count}"\r\n'.encode('utf-8')
+        _send_and_wait(ser, num_cmd, 1.0)
+        time.sleep(0.5)
+        
+        # Update TASKTIME
+        cycle = st.session_state.get("cell_task_cycle", 1)
+        interval = st.session_state.get("cell_task_interval", 100)
+        tt_cmd = f'AT+TASKTIME="{cycle}","{interval}"\r\n'.encode('utf-8')
+        _send_and_wait(ser, tt_cmd, 1.0)
+        time.sleep(0.5)
+        
+        # Restart the module to apply the changes
+        _send_and_wait(ser, b'AT+PWR\r\n', 1.5)
+        st.toast("Polling list saved! DTU is restarting...", icon="✅")
+    else:
+        st.toast("Failed to enter AT mode", icon="❌")

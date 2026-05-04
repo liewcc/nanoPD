@@ -46,6 +46,11 @@ pages = {
 # Initialize and run the multi-page navigation router
 pg = st.navigation(pages)
 
+if pg.title != "Home":
+    from utils.style_utils import render_mqtt_status_panel
+    with st.sidebar:
+        render_mqtt_status_panel()
+
 if st.session_state.get("current_nav_page") != pg.title:
     st.session_state["current_nav_page"] = pg.title
     st.session_state["rs485_config_loaded"] = False

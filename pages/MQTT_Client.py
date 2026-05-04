@@ -166,29 +166,34 @@ def handle_connect(host, port, cid, user, pwd):
         def on_connect_cb(c, userdata, flags, rc, props):
             if rc == 0:
                 userdata["state_obj"]["status"] = "connected"
-                userdata["logs"].append("[System] Connected successfully!")
+                userdata["logs"].append({"msg": "[System] Connected successfully!"})
                 for t, q in userdata["subscriptions"].items():
                     c.subscribe(t, q)
             else:
                 userdata["state_obj"]["status"] = f"refused:{rc}"
-                userdata["logs"].append(f"[System] Connection refused! Reason code: {rc}")
+                userdata["logs"].append({"msg": f"[System] Connection refused! Reason code: {rc}"})
 
         def on_disconnect_cb(c, userdata, flags, rc, props):
             userdata["state_obj"]["status"] = "disconnected"
-            userdata["logs"].append(f"[System] Disconnected. Reason code: {rc}")
+            userdata["logs"].append({"msg": f"[System] Disconnected. Reason code: {rc}"})
 
         def on_message_cb(c, userdata, msg):
-            try:
-                payload = msg.payload.decode('utf-8', errors='replace')
-            except:
-                payload = msg.payload.hex()
-            t = time.localtime()
-            ms = int((time.time() % 1) * 1000)
-            t_str = f"[{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}.{ms:03d}]"
-            log_entry = f"{t_str} RX<< {payload}"
-            userdata["logs"].append(log_entry)
+            log_dict = {
+                "time": time.time(),
+                "dir": "RX",
+                "data": msg.payload
+            }
+            userdata["logs"].append(log_dict)
             # Append to log file
             try:
+                t = time.localtime(log_dict["time"])
+                ms = int((log_dict["time"] % 1) * 1000)
+                t_str = f"[{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}.{ms:03d}]"
+                try:
+                    payload_str = msg.payload.decode('utf-8', errors='replace')
+                except:
+                    payload_str = msg.payload.hex()
+                log_entry = f"{t_str} RX<< {payload_str}"
                 with open(userdata.get("log_file", "Internet_MQTT.log"), "a", encoding="utf-8") as f:
                     f.write(log_entry + "\n")
             except Exception:
@@ -250,15 +255,21 @@ def handle_publish(topic, qos, payload):
     is_conn = st.session_state.mqtt_shared_state.get("status") == "connected"
     if st.session_state.mqtt_client and is_conn:
         st.session_state.mqtt_client.publish(topic, payload, qos)
-        t = time.localtime()
-        ms = int((time.time() % 1) * 1000)
-        t_str = f"[{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}.{ms:03d}]"
-        log_entry = f"{t_str} TX>> {payload}"
-        st.session_state.mqtt_logs.append(log_entry)
+        
+        log_dict = {
+            "time": time.time(),
+            "dir": "TX",
+            "data": payload.encode('utf-8')
+        }
+        st.session_state.mqtt_logs.append(log_dict)
         if len(st.session_state.mqtt_logs) > 100:
             st.session_state.mqtt_logs.pop(0)
         
         try:
+            t = time.localtime(log_dict["time"])
+            ms = int((log_dict["time"] % 1) * 1000)
+            t_str = f"[{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}.{ms:03d}]"
+            log_entry = f"{t_str} TX>> {payload}"
             log_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Internet_MQTT.log"))
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(log_entry + "\n")
@@ -362,14 +373,45 @@ with tab_internet:
             # MESSAGE LOGS
             with st.container(border=True):
                 st.markdown('<div class="layout-mcu-marker" style="display:none;"></div>', unsafe_allow_html=True)
-                tc, bc = st.columns([0.8, 0.2])
+                tc, mc, bc = st.columns([0.4, 0.4, 0.2])
                 with tc:
                     st.markdown('<p class="metric-label" style="margin:0">MESSAGE LOGS</p>', unsafe_allow_html=True)
+                with mc:
+                    st.radio("Log Format", ["ASCII", "HEX"], horizontal=True, label_visibility="collapsed", key="inet_log_format")
                 with bc:
                     st.button("🗑️ Clear", width='stretch', key="clear_mqtt_log", on_click=handle_clear_logs)
+                
                 inet_log_placeholder = st.empty()
-                lines = st.session_state.mqtt_logs if st.session_state.mqtt_logs else [""]
-                inet_log_placeholder.code("\n".join(lines), language="text")
+                display_lines = []
+                log_format = st.session_state.get("inet_log_format", "ASCII")
+                for log in st.session_state.mqtt_logs:
+                    if isinstance(log, dict):
+                        if "msg" in log and log["msg"] is not None:
+                            display_lines.append(log["msg"])
+                        else:
+                            direction = log.get("dir", "??")
+                            raw_data = log.get("data", b"")
+                            t = log.get("time", 0.0)
+                            
+                            t_str = ""
+                            if t > 0:
+                                dt = time.localtime(t)
+                                ms = int((t % 1) * 1000)
+                                t_str = f"[{dt.tm_hour:02d}:{dt.tm_min:02d}:{dt.tm_sec:02d}.{ms:03d}] "
+                            
+                            if log_format == "HEX":
+                                formatted = raw_data.hex(' ').upper()
+                            else:
+                                formatted = raw_data.decode('utf-8', errors='replace').replace('\r', '\\r').replace('\n', '\\n')
+                                
+                            prefix = ">>" if direction == "TX" else "<<" if direction == "RX" else ""
+                            display_lines.append(f"{t_str}{direction}{prefix} {formatted}")
+                    else:
+                        display_lines.append(log)
+                
+                if not display_lines:
+                    display_lines = [""]
+                inet_log_placeholder.code("\n".join(display_lines), language="text")
 
                 # Auto-scroll logs to bottom
                 if st.session_state.mqtt_logs:
@@ -407,6 +449,42 @@ with tab_internet:
                         st.session_state.mqtt_auto_refresh = not st.session_state.mqtt_auto_refresh
                         st.rerun()
 
+
+
+# ─── Cellular Modbus Helpers ────────────────────────────────────────────────
+def update_cell_modbus_id_from_hex():
+    val = st.session_state.get("cell_modbus_id_hex", "").strip()
+    try:
+        if val:
+            clean_val = val[2:] if val.lower().startswith('0x') else val
+            dec_val = int(clean_val, 16)
+            st.session_state.cell_modbus_id_dec = str(dec_val)
+            st.session_state.cell_modbus_id_hex = f"0x{dec_val:02X}"
+    except ValueError: pass
+
+def update_cell_modbus_id_from_dec():
+    val = st.session_state.get("cell_modbus_id_dec", "").strip()
+    try:
+        if val:
+            st.session_state.cell_modbus_id_hex = f"0x{int(val):02X}"
+    except ValueError: pass
+
+def update_cell_modbus_addr_from_hex():
+    val = st.session_state.get("cell_modbus_addr_hex", "").strip()
+    try:
+        if val:
+            clean_val = val[2:] if val.lower().startswith('0x') else val
+            dec_val = int(clean_val, 16)
+            st.session_state.cell_modbus_addr_dec = str(dec_val)
+            st.session_state.cell_modbus_addr_hex = f"0x{dec_val:04X}"
+    except ValueError: pass
+
+def update_cell_modbus_addr_from_dec():
+    val = st.session_state.get("cell_modbus_addr_dec", "").strip()
+    try:
+        if val:
+            st.session_state.cell_modbus_addr_hex = f"0x{int(val):04X}"
+    except ValueError: pass
 
 
 # ─── TAB 2: CELLULAR MQTT ───────────────────────────────────────────────────
@@ -535,22 +613,128 @@ with tab_cellular:
                     st.markdown('<p class="metric-label" style="margin:4px 0 0 0">QOS</p>', unsafe_allow_html=True)
                     st.selectbox("Pub QoS", [0, 1, 2], key="prov_pub_qos_new", label_visibility="collapsed", index=st.session_state.mqtt_cfg.get("cellular_pub_qos", 0))
 
+            # MODBUS RTU PANEL (New Container)
+            with st.container(border=True):
+                st.markdown('<p class="metric-label" style="margin:0 0 12px 0">📋 MODBUS RTU CONFIGURATION</p>', unsafe_allow_html=True)
+                
+                m1, m2 = st.columns(2)
+                with m1:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">DEVICE ID (HEX | DEC)</p>', unsafe_allow_html=True)
+                    mh_col, md_col = st.columns(2)
+                    with mh_col:
+                        st.text_input("ID HEX", key="cell_modbus_id_hex", on_change=update_cell_modbus_id_from_hex, label_visibility="collapsed")
+                    with md_col:
+                        st.text_input("ID DEC", key="cell_modbus_id_dec", on_change=update_cell_modbus_id_from_dec, label_visibility="collapsed")
+                with m2:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">FUNCTION (HEX)</p>', unsafe_allow_html=True)
+                    modbus_funcs = [
+                        "01 (Read Coils)",
+                        "02 (Read Discrete Inputs)",
+                        "03 (Read Holding Registers)",
+                        "04 (Read Input Registers)",
+                        "05 (Write Single Coil)",
+                        "06 (Write Single Register)",
+                        "0F (Write Multiple Coils)",
+                        "10 (Write Multiple Registers)"
+                    ]
+                    st.selectbox("Func", modbus_funcs, key="cell_modbus_func", label_visibility="collapsed")
+
+                m3, m4, m5 = st.columns(3)
+                with m3:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">START ADDR (HEX | DEC)</p>', unsafe_allow_html=True)
+                    sah_col, sad_col = st.columns(2)
+                    with sah_col:
+                        st.text_input("Addr HEX", key="cell_modbus_addr_hex", on_change=update_cell_modbus_addr_from_hex, label_visibility="collapsed")
+                    with sad_col:
+                        st.text_input("Addr DEC", key="cell_modbus_addr_dec", on_change=update_cell_modbus_addr_from_dec, label_visibility="collapsed")
+                with m4:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">QUANTITY (DEC)</p>', unsafe_allow_html=True)
+                    st.number_input("Qty", min_value=1, max_value=125, key="cell_modbus_qty", label_visibility="collapsed")
+                with m5:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">&nbsp;</p>', unsafe_allow_html=True)
+                    st.button("⚙️ Set DTU Modbus", width="stretch", type="secondary", on_click=cellular_mqtt.handle_setup_dtu_modbus, help="Configure DTU for Modbus via AT commands")
+
+            # POLLING CONTAINER
+            with st.container(border=True):
+                st.markdown('<p class="metric-label" style="margin:0 0 12px 0">🔄 POLLING CONFIGURATION</p>', unsafe_allow_html=True)
+                
+                tt_c1, tt_c2 = st.columns(2)
+                with tt_c1:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">CYCLE TIME (s)</p>', unsafe_allow_html=True)
+                    st.number_input("Cycle", min_value=1, max_value=3600, key="cell_task_cycle", label_visibility="collapsed", help="Polling cycle time")
+                with tt_c2:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">INTERVAL (ms)</p>', unsafe_allow_html=True)
+                    st.number_input("Interval", min_value=10, max_value=5000, key="cell_task_interval", label_visibility="collapsed", help="Delay between each command")
+
+                st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
+
+                if "cell_polling_list" in st.session_state:
+                    import pandas as pd
+                    df = pd.DataFrame(st.session_state.cell_polling_list)
+                    if df.empty:
+                        df = pd.DataFrame(columns=["Index", "Command"])
+                    edited_df = st.data_editor(
+                        df,
+                        num_rows="dynamic",
+                        key="cell_polling_editor",
+                        width='stretch',
+                        hide_index=True
+                    )
+                    st.session_state.cell_polling_list = edited_df.to_dict('records')
+                
+                pc1, pc2 = st.columns(2)
+                with pc1:
+                    st.button("📥 Check Polling List", width="stretch", disabled=not cell_connected, on_click=cellular_mqtt.handle_check_polling_list)
+                with pc2:
+                    if st.button("📤 Send Polling List", width="stretch", disabled=not cell_connected):
+                        cellular_mqtt.handle_send_polling_list(st.session_state.get("cell_polling_list", []))
+                        st.rerun()
+
 
     with cr:
         with st.container(height=760, border=False):
             # Cellular Logs
             with st.container(border=True):
                 st.markdown('<div class="layout-mcu-marker" style="display:none;"></div>', unsafe_allow_html=True)
-                tc2, bc2 = st.columns([0.8, 0.2])
+                tc2, mc2, bc2 = st.columns([0.4, 0.4, 0.2])
                 with tc2:
                     st.markdown('<p class="metric-label" style="margin:0">MESSAGE LOGS</p>', unsafe_allow_html=True)
+                with mc2:
+                    st.radio("Log Format", ["ASCII", "HEX"], horizontal=True, label_visibility="collapsed", key="cell_log_format")
                 with bc2:
                     st.button("🗑️ Clear", width='stretch', key="clear_cell_log_new", on_click=cellular_mqtt.handle_clear_logs)
                 
-                # Make the code block stretch nicely by wrapping it inside this fixed height container
+                # Format logs dynamically based on selected format
                 cell_log_placeholder = st.empty()
-                cell_lines = st.session_state.cell_logs if st.session_state.cell_logs else [""]
-                cell_log_placeholder.code("\n".join(cell_lines), language="text")
+                display_lines = []
+                log_format = st.session_state.get("cell_log_format", "ASCII")
+                for log in st.session_state.cell_logs:
+                    if isinstance(log, dict):
+                        direction = log.get("dir", "??")
+                        raw_data = log.get("data", b"")
+                        t = log.get("time", 0.0)
+                        
+                        t_str = ""
+                        if t > 0:
+                            dt = time.localtime(t)
+                            ms = int((t % 1) * 1000)
+                            t_str = f"[{dt.tm_hour:02d}:{dt.tm_min:02d}:{dt.tm_sec:02d}.{ms:03d}] "
+                        
+                        if log_format == "HEX":
+                            formatted = raw_data.hex(' ').upper()
+                        else:
+                            formatted = raw_data.decode('utf-8', errors='replace').replace('\r', '\\r').replace('\n', '\\n')
+                            
+                        prefix = ">>" if direction == "TX" else "<<" if direction == "RX" else ""
+                        display_lines.append(f"{t_str}{direction}{prefix} {formatted}")
+                    else:
+                        # Fallback for old logs stored as strings
+                        display_lines.append(log)
+                        
+                if not display_lines:
+                    display_lines = [""]
+                    
+                cell_log_placeholder.code("\n".join(display_lines), language="text")
 
                 # Auto-scroll logs to bottom (DOS-style)
                 if st.session_state.cell_logs:
@@ -580,11 +764,13 @@ with tab_cellular:
             with st.container(border=True):
                 st.markdown('<p class="metric-label" style="margin:0 0 12px 0">PAYLOAD</p>', unsafe_allow_html=True)
                 cell_payload = st.text_input("Payload", value=st.session_state.mqtt_cfg.get("cellular_payload", "Hello from DTU!"), key="cell_payload_new", label_visibility="collapsed")
-                ca1, ca2 = st.columns([0.7, 0.3])
+                ca1, ca2, ca3 = st.columns([0.4, 0.4, 0.2])
                 with ca1:
                     st.button("📤 Publish", width="stretch", type="primary", disabled=not cell_connected, key="cell_send_new", on_click=cellular_mqtt.handle_send_data)
                 with ca2:
-                    if st.button("🔁 Auto RX", width="stretch", type="primary" if st.session_state.cell_auto_refresh else "secondary", key="cell_auto_new", help="Auto-refresh to read serial"):
+                    st.button("📡 Publish Modbus", width="stretch", type="primary", disabled=not cell_connected, key="cell_modbus_pub_new", on_click=cellular_mqtt.handle_publish_modbus, help="Build Modbus RTU frame and publish via MQTT")
+                with ca3:
+                    if st.button("🔁 Auto", width="stretch", type="primary" if st.session_state.cell_auto_refresh else "secondary", key="cell_auto_new", help="Auto-refresh to read serial"):
                         st.session_state.cell_auto_refresh = not st.session_state.cell_auto_refresh
                         st.rerun()
 
