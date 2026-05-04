@@ -38,8 +38,8 @@ pages = {
         st.Page("pages/OTP.py", title="OTP", icon="🔑"),
     ],
     "Utilities": [
-        st.Page("pages/UI_calibration_sandbox.py", title="UI calibration sandbox", icon="🧪"),
         st.Page("pages/RS485_Decoder.py", title="RS485 Decoder", icon="🔌"),
+        st.Page("pages/MQTT_Client.py", title="MQTT Client", icon="📡"),
     ]
 }
 
