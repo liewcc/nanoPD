@@ -37,8 +37,8 @@ def save_current_mqtt_config():
         "cellular_payload": get_val("cell_payload_new", "cellular_payload", ""),
         "cellular_port_name": get_val("cell_com_port_new", "cellular_port_name", ""),
         "cellular_baud_rate": get_val("cell_baud_new", "cellular_baud_rate", 115200),
-        "inet_log_format": get_val("inet_log_format", "inet_log_format", "ASCII"),
-        "cell_log_format": get_val("cell_log_format", "cell_log_format", "ASCII"),
+        "inet_log_format": get_val("inet_log_format", "inet_log_format", "Auto"),
+        "cell_log_format": get_val("cell_log_format", "cell_log_format", "Auto"),
         "cell_modbus_id_hex": get_val("cell_modbus_id_hex", "cell_modbus_id_hex", "0x01"),
         "cell_modbus_id_dec": get_val("cell_modbus_id_dec", "cell_modbus_id_dec", "1"),
         "cell_modbus_func": get_val("cell_modbus_func", "cell_modbus_func", "03 (Read Holding Registers)"),
@@ -110,9 +110,26 @@ if 'cell_task_interval' not in st.session_state:
 if 'cell_polling_list' not in st.session_state:
     st.session_state.cell_polling_list = []
 if 'inet_log_format' not in st.session_state:
-    st.session_state.inet_log_format = st.session_state.mqtt_cfg.get("inet_log_format", "ASCII")
+    st.session_state.inet_log_format = st.session_state.mqtt_cfg.get("inet_log_format", "Auto")
 if 'cell_log_format' not in st.session_state:
-    st.session_state.cell_log_format = st.session_state.mqtt_cfg.get("cell_log_format", "ASCII")
+    st.session_state.cell_log_format = st.session_state.mqtt_cfg.get("cell_log_format", "Auto")
+
+if 'known_at_patterns' not in st.session_state:
+    known_patterns = {"+++", "atk", "ATK", "OK", "ERROR", "AT"}
+    param_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "all parameter.txt"))
+    if os.path.exists(param_file):
+        try:
+            with open(param_file, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        if line.startswith("AT+") or line.startswith("+"):
+                            cmd_part = line.split(':')[0].split('=')[0]
+                            known_patterns.add(cmd_part)
+        except:
+            pass
+    st.session_state.known_at_patterns = known_patterns
+
 if 'prov_sub_new' not in st.session_state:
     st.session_state.prov_sub_new = st.session_state.mqtt_cfg.get("cellular_sub_topic", "")
 if 'prov_sub_qos_new' not in st.session_state:
@@ -479,13 +496,13 @@ with tab_internet:
                 with tc:
                     st.markdown('<p class="metric-label" style="margin:0">MESSAGE LOGS</p>', unsafe_allow_html=True)
                 with mc:
-                    st.radio("Log Format", ["ASCII", "HEX"], horizontal=True, label_visibility="collapsed", key="inet_log_format")
+                    st.radio("Log Format", ["ASCII", "HEX", "Auto"], horizontal=True, label_visibility="collapsed", key="inet_log_format")
                 with bc:
                     st.button("🗑️ Clear", width='stretch', key="clear_mqtt_log", on_click=handle_clear_logs)
                 
                 inet_log_placeholder = st.empty()
                 display_lines = []
-                log_format = st.session_state.get("inet_log_format", "ASCII")
+                log_format = st.session_state.get("inet_log_format", "Auto")
                 for log in st.session_state.mqtt_logs:
                     if isinstance(log, dict):
                         if "msg" in log and log["msg"] is not None:
@@ -501,7 +518,70 @@ with tab_internet:
                                 ms = int((t % 1) * 1000)
                                 t_str = f"[{dt.tm_hour:02d}:{dt.tm_min:02d}:{dt.tm_sec:02d}.{ms:03d}] "
                             
-                            if log_format == "HEX":
+                            fmt = log_format
+                            custom_formatted = None
+                            if fmt == "Auto":
+                                import re
+                                m = re.match(br'^(<\d+>)(.*)', raw_data)
+                                if m:
+                                    prefix_str = m.group(1).decode('ascii')
+                                    hex_str = m.group(2).hex(' ').upper()
+                                    custom_formatted = f"{prefix_str} {hex_str}"
+                                elif b'\nTopic:' in raw_data or b'Please check GPRS' in raw_data:
+                                    fmt = "ASCII"
+                                else:
+                                    is_at = False
+                                    try:
+                                        text = raw_data.decode('utf-8')
+                                        for line in text.replace('\r', '\n').split('\n'):
+                                            line = line.strip()
+                                            if not line:
+                                                continue
+                                            cmd_part = line.split(':')[0].split('=')[0]
+                                            if cmd_part in st.session_state.get('known_at_patterns', set()) or line in st.session_state.get('known_at_patterns', set()) or line.upper().startswith('AT'):
+                                                is_at = True
+                                                break
+                                    except:
+                                        pass
+                                        
+                                    if is_at:
+                                        fmt = "ASCII"
+                                    else:
+                                        is_modbus = False
+                                        if len(raw_data) >= 4:
+                                            if cellular_mqtt.calculate_crc16(raw_data[:-2]) == raw_data[-2:]:
+                                                is_modbus = True
+                                            else:
+                                                offset = 0
+                                                valid_count = 0
+                                                while offset + 4 <= len(raw_data):
+                                                    fc = raw_data[offset + 1]
+                                                    candidates = [8]
+                                                    if fc in (1, 2, 3, 4) and offset + 2 < len(raw_data):
+                                                        candidates.append(3 + raw_data[offset + 2] + 2)
+                                                    elif fc in (15, 16) and offset + 6 < len(raw_data):
+                                                        candidates.append(7 + raw_data[offset + 6] + 2)
+                                                    found = False
+                                                    for l in set(candidates):
+                                                        if offset + l <= len(raw_data):
+                                                            pkt = raw_data[offset:offset+l]
+                                                            if cellular_mqtt.calculate_crc16(pkt[:-2]) == pkt[-2:]:
+                                                                valid_count += 1
+                                                                offset += l
+                                                                found = True
+                                                                break
+                                                    if not found:
+                                                        break
+                                                if valid_count > 0:
+                                                    is_modbus = True
+                                        if is_modbus:
+                                            fmt = "HEX"
+                                        else:
+                                            fmt = "ASCII"
+
+                            if custom_formatted is not None:
+                                formatted = custom_formatted
+                            elif fmt == "HEX":
                                 formatted = raw_data.hex(' ').upper()
                             else:
                                 formatted = raw_data.decode('utf-8', errors='replace').replace('\r', '\\r').replace('\n', '\\n')
@@ -782,14 +862,14 @@ with tab_cellular:
                 with tc2:
                     st.markdown('<p class="metric-label" style="margin:0">MESSAGE LOGS</p>', unsafe_allow_html=True)
                 with mc2:
-                    st.radio("Log Format", ["ASCII", "HEX"], horizontal=True, label_visibility="collapsed", key="cell_log_format")
+                    st.radio("Log Format", ["ASCII", "HEX", "Auto"], horizontal=True, label_visibility="collapsed", key="cell_log_format")
                 with bc2:
                     st.button("🗑️ Clear", width='stretch', key="clear_cell_log_new", on_click=cellular_mqtt.handle_clear_logs)
                 
                 # Format logs dynamically based on selected format
                 cell_log_placeholder = st.empty()
                 display_lines = []
-                log_format = st.session_state.get("cell_log_format", "ASCII")
+                log_format = st.session_state.get("cell_log_format", "Auto")
                 for log in st.session_state.cell_logs:
                     if isinstance(log, dict):
                         direction = log.get("dir", "??")
@@ -802,7 +882,70 @@ with tab_cellular:
                             ms = int((t % 1) * 1000)
                             t_str = f"[{dt.tm_hour:02d}:{dt.tm_min:02d}:{dt.tm_sec:02d}.{ms:03d}] "
                         
-                        if log_format == "HEX":
+                        fmt = log_format
+                        custom_formatted = None
+                        if fmt == "Auto":
+                            import re
+                            m = re.match(br'^(<\d+>)(.*)', raw_data)
+                            if m:
+                                prefix_str = m.group(1).decode('ascii')
+                                hex_str = m.group(2).hex(' ').upper()
+                                custom_formatted = f"{prefix_str} {hex_str}"
+                            elif b'\nTopic:' in raw_data or b'Please check GPRS' in raw_data:
+                                fmt = "ASCII"
+                            else:
+                                is_at = False
+                                try:
+                                    text = raw_data.decode('utf-8')
+                                    for line in text.replace('\r', '\n').split('\n'):
+                                        line = line.strip()
+                                        if not line:
+                                            continue
+                                        cmd_part = line.split(':')[0].split('=')[0]
+                                        if cmd_part in st.session_state.get('known_at_patterns', set()) or line in st.session_state.get('known_at_patterns', set()) or line.upper().startswith('AT'):
+                                            is_at = True
+                                            break
+                                except:
+                                    pass
+                                    
+                                if is_at:
+                                    fmt = "ASCII"
+                                else:
+                                    is_modbus = False
+                                    if len(raw_data) >= 4:
+                                        if cellular_mqtt.calculate_crc16(raw_data[:-2]) == raw_data[-2:]:
+                                            is_modbus = True
+                                        else:
+                                            offset = 0
+                                            valid_count = 0
+                                            while offset + 4 <= len(raw_data):
+                                                fc = raw_data[offset + 1]
+                                                candidates = [8]
+                                                if fc in (1, 2, 3, 4) and offset + 2 < len(raw_data):
+                                                    candidates.append(3 + raw_data[offset + 2] + 2)
+                                                elif fc in (15, 16) and offset + 6 < len(raw_data):
+                                                    candidates.append(7 + raw_data[offset + 6] + 2)
+                                                found = False
+                                                for l in set(candidates):
+                                                    if offset + l <= len(raw_data):
+                                                        pkt = raw_data[offset:offset+l]
+                                                        if cellular_mqtt.calculate_crc16(pkt[:-2]) == pkt[-2:]:
+                                                            valid_count += 1
+                                                            offset += l
+                                                            found = True
+                                                            break
+                                                if not found:
+                                                    break
+                                            if valid_count > 0:
+                                                is_modbus = True
+                                    if is_modbus:
+                                        fmt = "HEX"
+                                    else:
+                                        fmt = "ASCII"
+
+                        if custom_formatted is not None:
+                            formatted = custom_formatted
+                        elif fmt == "HEX":
                             formatted = raw_data.hex(' ').upper()
                         else:
                             formatted = raw_data.decode('utf-8', errors='replace').replace('\r', '\\r').replace('\n', '\\n')
