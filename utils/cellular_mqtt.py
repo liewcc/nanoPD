@@ -21,6 +21,7 @@ _DEFAULTS = {
     "cell_modbus_func": "03 (Read Holding Registers)",
     "cell_task_cycle": 1,
     "cell_task_interval": 100,
+    "cell_enable_identifier": True,
 }
 
 def init_state():
@@ -184,20 +185,22 @@ def handle_clear_logs():
 
 
 def _enter_at_mode(ser):
-    """Enter AT command mode safely."""
+    """Enter AT command mode safely with strict guard time (1.1s silence)."""
+    # 1. Pre-sequence Guard Time: Wait to ensure no data is in flight
+    time.sleep(1.1)
     ser.reset_input_buffer()
+    
     _log_raw("TX", b"+++")
     ser.write(b'+++')
     ser.flush()
-    time.sleep(0.5)
+    
+    # 2. Post-sequence Guard Time: Wait for DTU to process escape
+    time.sleep(1.1)
+    
     rx = bytearray()
-    deadline = time.time() + 4.0
-    while time.time() < deadline:
-        if ser.in_waiting > 0:
-            rx.extend(ser.read(ser.in_waiting))
-            if b'atk' in rx.lower():
-                break
-        time.sleep(0.05)
+    # Read any buffered response (should contain 'atk')
+    if ser.in_waiting > 0:
+        rx.extend(ser.read(ser.in_waiting))
     
     if rx:
         _log_raw("RX", rx)
@@ -556,10 +559,13 @@ def handle_setup_dtu_modbus():
     st.toast("Setting up DTU for Modbus...", icon="⏳")
     if _enter_at_mode(ser):
         # 1. Ensure MQTT work mode
-        _send_and_wait(ser, b'AT+WORK="MQTT"\r\n', 1.0)
-        # 2. Enable Modbus RTU gateway mode (converts serial RTU to MQTT/Network)
-        # Based on ATK-D40 documentation, this enables CRC verification and protocol adaptation.
-        _send_and_wait(ser, b'AT+MODBUSRTU=1\r\n', 1.0)
+        _send_and_wait(ser, b'AT+WORK="MQTT"\r\n', 1.5)
+        # 2. Enable Modbus RTU gateway mode (using quotes for parameter)
+        _send_and_wait(ser, b'AT+MODBUSRTU="1"\r\n', 1.5)
+        
+        # Sync hardware state to UI (polling tasks, etc.)
+        _read_hw_state_in_at_mode(ser)
+        
         # 3. Exit back to transparent/working mode
         _send_and_wait(ser, b'ATO\r\n', 1.0)
         st.toast("DTU Setup Complete: MQTT + Modbus Mode", icon="✅")
@@ -657,6 +663,13 @@ def handle_send_polling_list(polling_list):
         interval = st.session_state.get("cell_task_interval", 100)
         tt_cmd = f'AT+TASKTIME="{cycle}","{interval}"\r\n'.encode('utf-8')
         _send_and_wait(ser, tt_cmd, 1.0)
+        time.sleep(0.5)
+
+        # Set TASKDIST (Identifier Toggle)
+        enable_id = st.session_state.get("cell_enable_identifier", True)
+        id_val = "1" if enable_id else "0"
+        dist_cmd = f'AT+TASKDIST="{id_val}","<%d>"\r\n'.encode('utf-8')
+        _send_and_wait(ser, dist_cmd, 1.0)
         time.sleep(0.5)
         
         # Restart the module to apply the changes

@@ -48,6 +48,7 @@ def save_current_mqtt_config():
         "cell_modbus_addr_hex": get_val("cell_modbus_addr_hex", "cell_modbus_addr_hex", "0x0000"),
         "cell_modbus_addr_dec": get_val("cell_modbus_addr_dec", "cell_modbus_addr_dec", "0"),
         "cell_modbus_qty": get_val("cell_modbus_qty", "cell_modbus_qty", 1),
+        "cell_enable_identifier": get_val("cell_enable_identifier", "cell_enable_identifier", True),
         "mqtt_subscriptions": dict(st.session_state.get("mqtt_subscriptions", st.session_state.mqtt_cfg.get("mqtt_subscriptions", {})))
     }
     st.session_state.mqtt_cfg = cfg
@@ -116,6 +117,8 @@ if 'inet_log_format' not in st.session_state:
     st.session_state.inet_log_format = st.session_state.mqtt_cfg.get("inet_log_format", "Auto")
 if 'cell_log_format' not in st.session_state:
     st.session_state.cell_log_format = st.session_state.mqtt_cfg.get("cell_log_format", "Auto")
+if 'cell_enable_identifier' not in st.session_state:
+    st.session_state.cell_enable_identifier = st.session_state.mqtt_cfg.get("cell_enable_identifier", True)
 
 if 'known_at_patterns' not in st.session_state:
     known_patterns = {"+++", "atk", "ATK", "OK", "ERROR", "AT"}
@@ -203,7 +206,7 @@ st.markdown(f"""
             overflow-y: visible !important;
         }}
         /* Fix height for the log block to push PAYLOAD container to the bottom */
-        div[data-testid="stVerticalBlock"]:has(.layout-mcu-marker) pre {{
+        div[data-testid="stVerticalBlockBorderWrapper"]:has(.layout-mcu-marker) pre {{
             height: 458px !important; overflow-y: auto !important; margin: 0 !important;
             display: flex !important; flex-direction: column-reverse !important;
         }}
@@ -238,7 +241,11 @@ def handle_connect(host, port, cid, user, pwd):
         def on_connect_cb(c, userdata, flags, rc, props):
             if rc == 0:
                 userdata["state_obj"]["status"] = "connected"
-                msg_dict = {"msg": "[System] Connected successfully!"}
+                _now = time.time()
+                _t = time.localtime(_now)
+                _ms = int((_now % 1) * 1000)
+                _ts = f"[{_t.tm_hour:02d}:{_t.tm_min:02d}:{_t.tm_sec:02d}.{_ms:03d}]"
+                msg_dict = {"msg": f"{_ts} SY>> Connected"}
                 userdata["logs"].append(msg_dict)
                 try:
                     with open(userdata.get("state_file", "Internet_MQTT_state.jsonl"), "a", encoding="utf-8") as f:
@@ -249,7 +256,11 @@ def handle_connect(host, port, cid, user, pwd):
                     c.subscribe(t, q)
             else:
                 userdata["state_obj"]["status"] = f"refused:{rc}"
-                msg_dict = {"msg": f"[System] Connection refused! Reason code: {rc}"}
+                _now = time.time()
+                _t = time.localtime(_now)
+                _ms = int((_now % 1) * 1000)
+                _ts = f"[{_t.tm_hour:02d}:{_t.tm_min:02d}:{_t.tm_sec:02d}.{_ms:03d}]"
+                msg_dict = {"msg": f"{_ts} SY>> Connection refused! Reason code: {rc}"}
                 userdata["logs"].append(msg_dict)
                 try:
                     with open(userdata.get("state_file", "Internet_MQTT_state.jsonl"), "a", encoding="utf-8") as f:
@@ -259,7 +270,11 @@ def handle_connect(host, port, cid, user, pwd):
 
         def on_disconnect_cb(c, userdata, flags, rc, props):
             userdata["state_obj"]["status"] = "disconnected"
-            msg_dict = {"msg": f"[System] Disconnected. Reason code: {rc}"}
+            _now = time.time()
+            _t = time.localtime(_now)
+            _ms = int((_now % 1) * 1000)
+            _ts = f"[{_t.tm_hour:02d}:{_t.tm_min:02d}:{_t.tm_sec:02d}.{_ms:03d}]"
+            msg_dict = {"msg": f"{_ts} SY>> Disconnected. Reason code: {rc}"}
             userdata["logs"].append(msg_dict)
             try:
                 with open(userdata.get("state_file", "Internet_MQTT_state.jsonl"), "a", encoding="utf-8") as f:
@@ -818,7 +833,7 @@ with tab_cellular:
                     ]
                     st.selectbox("Func", modbus_funcs, key="cell_modbus_func", label_visibility="collapsed")
 
-                m3, m4, m5 = st.columns(3)
+                m3, m4 = st.columns(2)
                 with m3:
                     st.markdown('<p class="metric-label" style="margin:4px 0 0 0">START ADDR (HEX | DEC)</p>', unsafe_allow_html=True)
                     sah_col, sad_col = st.columns(2)
@@ -829,9 +844,33 @@ with tab_cellular:
                 with m4:
                     st.markdown('<p class="metric-label" style="margin:4px 0 0 0">QUANTITY (DEC)</p>', unsafe_allow_html=True)
                     st.number_input("Qty", min_value=1, max_value=125, key="cell_modbus_qty", label_visibility="collapsed")
-                with m5:
-                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">&nbsp;</p>', unsafe_allow_html=True)
-                    st.button("⚙️ Set DTU Modbus", width="stretch", type="secondary", on_click=cellular_mqtt.handle_setup_dtu_modbus, help="Configure DTU for Modbus via AT commands")
+
+                # --- Compute & display full Modbus RTU command with CRC ---
+                _mb_valid = True
+                try:
+                    _mb_id_str = st.session_state.get("cell_modbus_id_dec", "1")
+                    _mb_id = int(_mb_id_str) if _mb_id_str else 0
+                    _mb_func_sel = st.session_state.get("cell_modbus_func", "03")
+                    _mb_fc = int(_mb_func_sel.split(" ")[0], 16)
+                    _mb_addr_str = st.session_state.get("cell_modbus_addr_dec", "0")
+                    _mb_addr = int(_mb_addr_str) if _mb_addr_str else 0
+                    _mb_qty = int(st.session_state.get("cell_modbus_qty", 1))
+                    if not (0 < _mb_id <= 247):
+                        _mb_valid = False
+                except (ValueError, TypeError):
+                    _mb_valid = False
+
+                if _mb_valid:
+                    _mb_frame = bytearray()
+                    _mb_frame.append(_mb_id)
+                    _mb_frame.append(_mb_fc)
+                    _mb_frame.append((_mb_addr >> 8) & 0xFF)
+                    _mb_frame.append(_mb_addr & 0xFF)
+                    _mb_frame.append((_mb_qty >> 8) & 0xFF)
+                    _mb_frame.append(_mb_qty & 0xFF)
+                    _mb_frame.extend(cellular_mqtt.calculate_crc16(_mb_frame))
+                    _mb_hex = _mb_frame.hex(' ').upper()
+                    st.code(_mb_hex, language=None)
 
             # POLLING CONTAINER
             with st.container(border=True):
@@ -844,6 +883,8 @@ with tab_cellular:
                 with tt_c2:
                     st.markdown('<p class="metric-label" style="margin:4px 0 0 0">INTERVAL (ms)</p>', unsafe_allow_html=True)
                     st.number_input("Interval", min_value=10, max_value=5000, value=None, key="cell_task_interval", label_visibility="collapsed", help="Delay between each command")
+
+                st.checkbox("Enable Identifier (Append Key Name to data)", key="cell_enable_identifier", help="Enables AT+TASKDIST=\"1\" to prepend the Key Name to reported data")
 
                 st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
 
