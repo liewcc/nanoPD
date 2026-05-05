@@ -36,6 +36,14 @@ def save_current_mqtt_config():
         "cellular_payload": get_val("cell_payload_new", "cellular_payload", ""),
         "cellular_port_name": get_val("cell_com_port_new", "cellular_port_name", ""),
         "cellular_baud_rate": get_val("cell_baud_new", "cellular_baud_rate", 115200),
+        "inet_log_format": get_val("inet_log_format", "inet_log_format", "ASCII"),
+        "cell_log_format": get_val("cell_log_format", "cell_log_format", "ASCII"),
+        "cell_modbus_id_hex": get_val("cell_modbus_id_hex", "cell_modbus_id_hex", "0x01"),
+        "cell_modbus_id_dec": get_val("cell_modbus_id_dec", "cell_modbus_id_dec", "1"),
+        "cell_modbus_func": get_val("cell_modbus_func", "cell_modbus_func", "03 (Read Holding Registers)"),
+        "cell_modbus_addr_hex": get_val("cell_modbus_addr_hex", "cell_modbus_addr_hex", "0x0000"),
+        "cell_modbus_addr_dec": get_val("cell_modbus_addr_dec", "cell_modbus_addr_dec", "0"),
+        "cell_modbus_qty": get_val("cell_modbus_qty", "cell_modbus_qty", 1),
         "mqtt_subscriptions": dict(st.session_state.get("mqtt_subscriptions", st.session_state.mqtt_cfg.get("mqtt_subscriptions", {})))
     }
     st.session_state.mqtt_cfg = cfg
@@ -67,6 +75,34 @@ if 'mqtt_auto_refresh' not in st.session_state:
     st.session_state.mqtt_auto_refresh = False
 if 'mqtt_shared_state' not in st.session_state:
     st.session_state.mqtt_shared_state = {"status": "disconnected"}
+
+# Initialize Cellular Modbus state for persistent configs
+if 'cell_modbus_id_hex' not in st.session_state:
+    st.session_state.cell_modbus_id_hex = st.session_state.mqtt_cfg.get("cell_modbus_id_hex", "0x01")
+if 'cell_modbus_id_dec' not in st.session_state:
+    st.session_state.cell_modbus_id_dec = st.session_state.mqtt_cfg.get("cell_modbus_id_dec", "1")
+if 'cell_modbus_addr_hex' not in st.session_state:
+    st.session_state.cell_modbus_addr_hex = st.session_state.mqtt_cfg.get("cell_modbus_addr_hex", "0x0000")
+if 'cell_modbus_addr_dec' not in st.session_state:
+    st.session_state.cell_modbus_addr_dec = st.session_state.mqtt_cfg.get("cell_modbus_addr_dec", "0")
+if 'cell_modbus_func' not in st.session_state:
+    st.session_state.cell_modbus_func = st.session_state.mqtt_cfg.get("cell_modbus_func", "03 (Read Holding Registers)")
+if 'cell_modbus_qty' not in st.session_state:
+    st.session_state.cell_modbus_qty = st.session_state.mqtt_cfg.get("cell_modbus_qty", 1)
+if 'cell_task_cycle' not in st.session_state:
+    st.session_state.cell_task_cycle = None
+if 'cell_task_interval' not in st.session_state:
+    st.session_state.cell_task_interval = None
+if 'cell_polling_list' not in st.session_state:
+    st.session_state.cell_polling_list = []
+if 'inet_log_format' not in st.session_state:
+    st.session_state.inet_log_format = st.session_state.mqtt_cfg.get("inet_log_format", "ASCII")
+if 'cell_log_format' not in st.session_state:
+    st.session_state.cell_log_format = st.session_state.mqtt_cfg.get("cell_log_format", "ASCII")
+if 'prov_sub_new' not in st.session_state:
+    st.session_state.prov_sub_new = st.session_state.mqtt_cfg.get("cellular_sub_topic", "")
+if 'prov_sub_qos_new' not in st.session_state:
+    st.session_state.prov_sub_qos_new = st.session_state.mqtt_cfg.get("cellular_sub_qos", 0)
 
 # Initialize Cellular MQTT state
 cellular_mqtt.init_state()
@@ -546,7 +582,7 @@ with tab_cellular:
                     disabled=not cell_connected or st.session_state.cell_provisioning,
                     on_click=lambda: [save_current_mqtt_config(), cellular_mqtt.handle_provision()],
                     key="cell_provision_new",
-                    help="Will also save current config"
+                    help="Apply config to DTU"
                 )
 
             # SUBSCRIPTION MANAGEMENT
@@ -555,10 +591,10 @@ with tab_cellular:
                 cs1, cs2, cs3 = st.columns([0.6, 0.15, 0.25])
                 with cs1:
                     st.markdown('<p class="metric-label" style="margin:4px 0 0 0">TOPIC</p>', unsafe_allow_html=True)
-                    prov_sub = st.text_input("DTU Sub", value=st.session_state.get("cell_active_sub") or "", key="prov_sub_new", label_visibility="collapsed")
+                    prov_sub = st.text_input("DTU Sub", key="prov_sub_new", label_visibility="collapsed")
                 with cs2:
                     st.markdown('<p class="metric-label" style="margin:4px 0 0 0">QOS</p>', unsafe_allow_html=True)
-                    prov_sub_qos = st.selectbox("Sub QoS", [0, 1, 2], key="prov_sub_qos_new", label_visibility="collapsed", index=st.session_state.get("cell_active_qos", 0))
+                    prov_sub_qos = st.selectbox("Sub QoS", [0, 1, 2], key="prov_sub_qos_new", label_visibility="collapsed")
                 with cs3:
                     st.markdown('<p class="metric-label" style="margin:4px 0 0 0">&nbsp;</p>', unsafe_allow_html=True)
                     st.button("➕ Subscribe", width="stretch", disabled=not cell_connected, key="cell_sub_btn_new", on_click=cellular_mqtt.handle_dtu_update_sub, args=(prov_sub, prov_sub_qos))
@@ -661,26 +697,28 @@ with tab_cellular:
                 tt_c1, tt_c2 = st.columns(2)
                 with tt_c1:
                     st.markdown('<p class="metric-label" style="margin:4px 0 0 0">CYCLE TIME (s)</p>', unsafe_allow_html=True)
-                    st.number_input("Cycle", min_value=1, max_value=3600, key="cell_task_cycle", label_visibility="collapsed", help="Polling cycle time")
+                    st.number_input("Cycle", min_value=1, max_value=3600, value=None, key="cell_task_cycle", label_visibility="collapsed", help="Polling cycle time")
                 with tt_c2:
                     st.markdown('<p class="metric-label" style="margin:4px 0 0 0">INTERVAL (ms)</p>', unsafe_allow_html=True)
-                    st.number_input("Interval", min_value=10, max_value=5000, key="cell_task_interval", label_visibility="collapsed", help="Delay between each command")
+                    st.number_input("Interval", min_value=10, max_value=5000, value=None, key="cell_task_interval", label_visibility="collapsed", help="Delay between each command")
 
                 st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
 
-                if "cell_polling_list" in st.session_state:
-                    import pandas as pd
-                    df = pd.DataFrame(st.session_state.cell_polling_list)
-                    if df.empty:
-                        df = pd.DataFrame(columns=["Index", "Command"])
-                    edited_df = st.data_editor(
-                        df,
-                        num_rows="dynamic",
-                        key="cell_polling_editor",
-                        width='stretch',
-                        hide_index=True
-                    )
-                    st.session_state.cell_polling_list = edited_df.to_dict('records')
+                import pandas as pd
+                polling_list = st.session_state.get("cell_polling_list")
+                if polling_list is None:
+                    polling_list = []
+                df = pd.DataFrame(polling_list)
+                if df.empty:
+                    df = pd.DataFrame(columns=["Index", "Command"])
+                edited_df = st.data_editor(
+                    df,
+                    num_rows="dynamic",
+                    key="cell_polling_editor",
+                    width='stretch',
+                    hide_index=True
+                )
+                st.session_state.cell_polling_list = edited_df.to_dict('records')
                 
                 pc1, pc2 = st.columns(2)
                 with pc1:
@@ -764,15 +802,11 @@ with tab_cellular:
             with st.container(border=True):
                 st.markdown('<p class="metric-label" style="margin:0 0 12px 0">PAYLOAD</p>', unsafe_allow_html=True)
                 cell_payload = st.text_input("Payload", value=st.session_state.mqtt_cfg.get("cellular_payload", "Hello from DTU!"), key="cell_payload_new", label_visibility="collapsed")
-                ca1, ca2, ca3 = st.columns([0.4, 0.4, 0.2])
+                ca1, ca2 = st.columns([0.5, 0.5])
                 with ca1:
                     st.button("📤 Publish", width="stretch", type="primary", disabled=not cell_connected, key="cell_send_new", on_click=cellular_mqtt.handle_send_data)
                 with ca2:
                     st.button("📡 Publish Modbus", width="stretch", type="primary", disabled=not cell_connected, key="cell_modbus_pub_new", on_click=cellular_mqtt.handle_publish_modbus, help="Build Modbus RTU frame and publish via MQTT")
-                with ca3:
-                    if st.button("🔁 Auto", width="stretch", type="primary" if st.session_state.cell_auto_refresh else "secondary", key="cell_auto_new", help="Auto-refresh to read serial"):
-                        st.session_state.cell_auto_refresh = not st.session_state.cell_auto_refresh
-                        st.rerun()
 
 # Automatically save the current configuration to config.json at the end of each rerun
 save_current_mqtt_config()
@@ -781,7 +815,7 @@ save_current_mqtt_config()
 needs_rerun = False
 if st.session_state.mqtt_auto_refresh:
     needs_rerun = True
-if st.session_state.cell_auto_refresh and cell_connected:
+if cell_connected:
     cellular_mqtt.handle_read_serial()
     needs_rerun = True
 if needs_rerun:

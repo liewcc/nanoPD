@@ -170,10 +170,12 @@ def _enter_at_mode(ser):
     ser.flush()
     time.sleep(0.5)
     rx = bytearray()
-    deadline = time.time() + 2.0
+    deadline = time.time() + 4.0
     while time.time() < deadline:
         if ser.in_waiting > 0:
             rx.extend(ser.read(ser.in_waiting))
+            if b'atk' in rx.lower():
+                break
         time.sleep(0.05)
     
     if rx:
@@ -188,6 +190,8 @@ def _enter_at_mode(ser):
             rx2 = ser.read(ser.in_waiting)
             if rx2:
                 _log_raw("RX", rx2)
+                if b'ERROR' in rx2.upper():
+                    return False
         return True
     else:
         resp = _send_and_wait(ser, b'AT\r\n', 1.0)
@@ -217,39 +221,44 @@ def handle_provision():
         if existing_hw:
             sub_topic = existing_hw[0]["topic"]
 
-    st.session_state.cell_provisioning = True
+    try:
+        st.session_state.cell_provisioning = True
 
-    # Step 1: Escape to AT mode
-    if not _enter_at_mode(ser):
-        st.session_state.cell_provisioning = False
-        return
+        # Step 1: Escape to AT mode
+        if not _enter_at_mode(ser):
+            st.session_state.cell_provisioning = False
+            st.toast("Failed to enter AT mode for provisioning", icon="❌")
+            return
 
-    # Step 2-7: Send configuration commands
-    commands = [
-        f'AT+WORK="MQTT"',
-        f'AT+MQTTIP="{broker_ip}","{broker_port}"',
-        f'AT+MQTTCD="{client_id}"',
-        f'AT+MQTTUN="{username}"',
-        f'AT+MQTTPW="{password}"',
-        f'AT+MQTTPUB1="1","{pub_topic}","0","0"' if pub_topic else None,
-        f'AT+MQTTSUB1="1","{sub_topic}","0"' if sub_topic else None,
-    ]
+        # Step 2-7: Send configuration commands
+        commands = [
+            f'AT+WORK="MQTT"',
+            f'AT+MQTTIP="{broker_ip}","{broker_port}"',
+            f'AT+MQTTCD="{client_id}"',
+            f'AT+MQTTUN="{username}"',
+            f'AT+MQTTPW="{password}"',
+            f'AT+MQTTPUB1="1","{pub_topic}","0","0"' if pub_topic else None,
+            f'AT+MQTTSUB1="1","{sub_topic}","0"' if sub_topic else None,
+        ]
 
-    for cmd in commands:
-        if cmd:  # Skip None entries
-            _send_and_wait(ser, (cmd + "\r\n").encode('utf-8'), 1.5)
+        for cmd in commands:
+            if cmd:  # Skip None entries
+                _send_and_wait(ser, (cmd + "\r\n").encode('utf-8'), 1.5)
 
-    # Return to transparent mode (auto-saves on these modules)
-    _send_and_wait(ser, b'ATO\r\n', 1.0)
-    st.session_state.cell_provisioning = False
-
-    # Re-enter AT mode after a short settle delay to read back the real
-    # hardware state. This is done AFTER ATO so AT+WORK="MQTT" has fully
-    # applied before we query.
-    time.sleep(1.5)
-    if _enter_at_mode(ser):
+        # Read back the actual hardware state BEFORE exiting AT mode.
+        # This completely avoids the buggy GPRS-connection period.
         _read_hw_state_in_at_mode(ser)
+
+        # Return to transparent mode (auto-saves on these modules)
         _send_and_wait(ser, b'ATO\r\n', 1.0)
+            
+        st.toast("Provisioning applied & synced successfully!", icon="✅")
+            
+    except Exception as e:
+        st.toast(f"Provisioning error: {e}", icon="❌")
+        _log_raw("RX", f"[System] Error: {e}".encode('utf-8'))
+    finally:
+        st.session_state.cell_provisioning = False
 
 # ─── Dynamic Subscription Management ─────────────────────────────────────────
 def handle_dtu_update_sub(topic, qos):
@@ -389,7 +398,52 @@ def _read_hw_state_in_at_mode(ser):
 
     count = len(active_subs)
     pub_info = f", PUB: {hw_pub['topic']}" if hw_pub else ""
-    st.toast(f"HW synced: {count} active subscription(s){pub_info}", icon="✅")
+
+    # --- Also read Polling List ---
+    # 0. Read TASKTIME
+    resp_time = _send_and_wait(ser, b'AT+TASKTIME\r\n', 1.0)
+    time_text = resp_time.decode('utf-8', errors='replace')
+    for line in time_text.splitlines():
+        line = line.strip()
+        if line.upper().startswith('+TASKTIME:'):
+            val = line.split(":", 1)[1].strip()
+            parts = val.split(',')
+            if len(parts) == 2:
+                try:
+                    st.session_state.cell_task_cycle = int(parts[0].replace('"', '').strip())
+                    st.session_state.cell_task_interval = int(parts[1].replace('"', '').strip())
+                except ValueError:
+                    pass
+
+    # 1. Read how many polling scripts are active
+    resp = _send_and_wait(ser, b'AT+TRANSPOLLNUM\r\n', 1.0)
+    
+    text = resp.decode('utf-8', errors='replace')
+    num = 0
+    for line in text.splitlines():
+        line = line.strip()
+        if line.upper().startswith('+TRANSPOLLNUM:'):
+            val = line.split(":", 1)[1].strip().replace('"', '')
+            try:
+                num = int(val)
+            except ValueError:
+                pass
+
+    polling_list = []
+    # 2. Read each script up to the active count
+    if num > 0:
+        for i in range(1, num + 1):
+            c_resp = _send_and_wait(ser, f'AT+TRANSCMD{i}\r\n'.encode('utf-8'), 0.5)
+            c_text = c_resp.decode('utf-8', errors='replace')
+            for line in c_text.splitlines():
+                line = line.strip()
+                if line.upper().startswith(f'+TRANSCMD{i}:'):
+                    cmd_val = line.split(":", 1)[1].strip().replace('"', '')
+                    polling_list.append({"Index": str(i), "Command": cmd_val})
+                    break
+    
+    st.session_state.cell_polling_list = polling_list
+    st.toast(f"HW synced: {count} sub(s){pub_info}, {len(polling_list)} task(s)", icon="✅")
 
 # ─── Hardware State Sync ──────────────────────────────────────────────────────
 def handle_sync_hw_state():
