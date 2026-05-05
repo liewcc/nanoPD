@@ -206,7 +206,7 @@ st.markdown(f"""
             overflow-y: visible !important;
         }}
         /* Fix height for the log block to push PAYLOAD container to the bottom */
-        div[data-testid="stVerticalBlockBorderWrapper"]:has(.layout-mcu-marker) pre {{
+        div[data-testid="stVerticalBlock"]:has(.layout-mcu-marker) pre {{
             height: 458px !important; overflow-y: auto !important; margin: 0 !important;
             display: flex !important; flex-direction: column-reverse !important;
         }}
@@ -214,6 +214,25 @@ st.markdown(f"""
         section[data-testid="stMain"] > div {{ padding-bottom: 0 !important; }}
         div[data-testid="block-container"] {{ padding-bottom: 0 !important; }}
         div[data-testid="stTabPanel"] {{ padding-bottom: 0 !important; }}
+        
+        /* Compact code block styling for one-line display with copy button */
+        div[data-testid="stElementContainer"]:has(.compact-code-marker) + div[data-testid="stElementContainer"] div[data-testid="stCode"] {{
+            width: fit-content !important;
+        }}
+        div[data-testid="stElementContainer"]:has(.compact-code-marker) + div[data-testid="stElementContainer"] div[data-testid="stCode"] pre {{
+            width: fit-content !important;
+            height: auto !important;
+            min-height: unset !important;
+            padding: 6px 12px !important;
+            margin: 0 !important;
+            display: block !important;
+            border: 1px solid rgba(255,255,255,0.1);
+            background-color: rgba(255,255,255,0.05);
+        }}
+        div[data-testid="stElementContainer"]:has(.compact-code-marker) + div[data-testid="stElementContainer"] div[data-testid="stCode"] [data-testid="stElementToolbar"] {{
+            top: 2px !important;
+            right: 2px !important;
+        }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -845,32 +864,34 @@ with tab_cellular:
                     st.markdown('<p class="metric-label" style="margin:4px 0 0 0">QUANTITY (DEC)</p>', unsafe_allow_html=True)
                     st.number_input("Qty", min_value=1, max_value=125, key="cell_modbus_qty", label_visibility="collapsed")
 
-                # --- Compute & display full Modbus RTU command with CRC ---
-                _mb_valid = True
-                try:
-                    _mb_id_str = st.session_state.get("cell_modbus_id_dec", "1")
-                    _mb_id = int(_mb_id_str) if _mb_id_str else 0
-                    _mb_func_sel = st.session_state.get("cell_modbus_func", "03")
-                    _mb_fc = int(_mb_func_sel.split(" ")[0], 16)
-                    _mb_addr_str = st.session_state.get("cell_modbus_addr_dec", "0")
-                    _mb_addr = int(_mb_addr_str) if _mb_addr_str else 0
-                    _mb_qty = int(st.session_state.get("cell_modbus_qty", 1))
-                    if not (0 < _mb_id <= 247):
-                        _mb_valid = False
-                except (ValueError, TypeError):
-                    _mb_valid = False
+                # Dynamically generate Modbus RTU frame
+                dev_id_str = st.session_state.get("cell_modbus_id_dec", "").strip()
+                addr_str = st.session_state.get("cell_modbus_addr_dec", "").strip()
+                qty_val = st.session_state.get("cell_modbus_qty")
+                func_str = st.session_state.get("cell_modbus_func", "03")
 
-                if _mb_valid:
-                    _mb_frame = bytearray()
-                    _mb_frame.append(_mb_id)
-                    _mb_frame.append(_mb_fc)
-                    _mb_frame.append((_mb_addr >> 8) & 0xFF)
-                    _mb_frame.append(_mb_addr & 0xFF)
-                    _mb_frame.append((_mb_qty >> 8) & 0xFF)
-                    _mb_frame.append(_mb_qty & 0xFF)
-                    _mb_frame.extend(cellular_mqtt.calculate_crc16(_mb_frame))
-                    _mb_hex = _mb_frame.hex(' ').upper()
-                    st.code(_mb_hex, language=None)
+                if dev_id_str and addr_str and qty_val is not None:
+                    try:
+                        dev_id = int(dev_id_str)
+                        func_code = int(func_str.split(" ")[0], 16)
+                        start_addr = int(addr_str)
+                        quantity = int(qty_val)
+                        
+                        frame = bytearray()
+                        frame.append(dev_id)
+                        frame.append(func_code)
+                        frame.append((start_addr >> 8) & 0xFF)
+                        frame.append(start_addr & 0xFF)
+                        frame.append((quantity >> 8) & 0xFF)
+                        frame.append(quantity & 0xFF)
+                        frame.extend(cellular_mqtt.calculate_crc16(frame))
+                        
+                        cmd_hex = frame.hex(' ').upper()
+                        st.markdown('<p class="metric-label" style="margin:12px 0 4px 0">GENERATED COMMAND (HEX)</p>', unsafe_allow_html=True)
+                        st.markdown('<div class="compact-code-marker" style="display:none;"></div>', unsafe_allow_html=True)
+                        st.code(cmd_hex, language="text")
+                    except ValueError:
+                        pass
 
             # POLLING CONTAINER
             with st.container(border=True):
