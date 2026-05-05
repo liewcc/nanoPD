@@ -25,3 +25,9 @@ firmware/
 !RS485_config_file/
 !RS485_config_file/*.json
 rule.md
+*.jsonl
+test_comm.py
+run_test.bat
+diag_dtu.py
+reset_dtu.py
+run_reset.bat

@@ -5,6 +5,7 @@ from utils.style_utils import apply_global_css
 from utils.config_utils import load_ui_config
 from utils import cellular_mqtt
 import os
+import json
 from utils.config_utils import load_ui_config, save_ui_config, load_mqtt_config, save_mqtt_config
 
 def save_current_mqtt_config():
@@ -59,12 +60,25 @@ if "mqtt_cfg" not in st.session_state:
 
 if 'mqtt_logs' not in st.session_state:
     st.session_state.mqtt_logs = []
-    log_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Internet_MQTT.log"))
-    if os.path.exists(log_file):
+    state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Internet_MQTT_state.jsonl"))
+    if os.path.exists(state_file):
         try:
-            with open(log_file, "r", encoding="utf-8") as f:
-                lines = [line.strip() for line in f.readlines() if line.strip()]
-                st.session_state.mqtt_logs = lines[-100:]
+            with open(state_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        try:
+                            obj = json.loads(line.strip())
+                            if "msg" in obj:
+                                st.session_state.mqtt_logs.append({"msg": obj["msg"]})
+                            else:
+                                st.session_state.mqtt_logs.append({
+                                    "time": obj["time"],
+                                    "dir": obj["dir"],
+                                    "data": bytes.fromhex(obj["data_hex"])
+                                })
+                        except:
+                            pass
+            st.session_state.mqtt_logs = st.session_state.mqtt_logs[-100:]
         except:
             pass
 if 'mqtt_client' not in st.session_state:
@@ -194,7 +208,8 @@ def handle_connect(host, port, cid, user, pwd):
             "logs": st.session_state.mqtt_logs,
             "subscriptions": st.session_state.mqtt_subscriptions,
             "state_obj": st.session_state.mqtt_shared_state,
-            "log_file": os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Internet_MQTT.log"))
+            "log_file": os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Internet_MQTT.log")),
+            "state_file": os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Internet_MQTT_state.jsonl"))
         }
         client.user_data_set(shared_state)
         if user:
@@ -203,16 +218,34 @@ def handle_connect(host, port, cid, user, pwd):
         def on_connect_cb(c, userdata, flags, rc, props):
             if rc == 0:
                 userdata["state_obj"]["status"] = "connected"
-                userdata["logs"].append({"msg": "[System] Connected successfully!"})
+                msg_dict = {"msg": "[System] Connected successfully!"}
+                userdata["logs"].append(msg_dict)
+                try:
+                    with open(userdata.get("state_file", "Internet_MQTT_state.jsonl"), "a", encoding="utf-8") as f:
+                        f.write(json.dumps(msg_dict) + "\n")
+                except:
+                    pass
                 for t, q in userdata["subscriptions"].items():
                     c.subscribe(t, q)
             else:
                 userdata["state_obj"]["status"] = f"refused:{rc}"
-                userdata["logs"].append({"msg": f"[System] Connection refused! Reason code: {rc}"})
+                msg_dict = {"msg": f"[System] Connection refused! Reason code: {rc}"}
+                userdata["logs"].append(msg_dict)
+                try:
+                    with open(userdata.get("state_file", "Internet_MQTT_state.jsonl"), "a", encoding="utf-8") as f:
+                        f.write(json.dumps(msg_dict) + "\n")
+                except:
+                    pass
 
         def on_disconnect_cb(c, userdata, flags, rc, props):
             userdata["state_obj"]["status"] = "disconnected"
-            userdata["logs"].append({"msg": f"[System] Disconnected. Reason code: {rc}"})
+            msg_dict = {"msg": f"[System] Disconnected. Reason code: {rc}"}
+            userdata["logs"].append(msg_dict)
+            try:
+                with open(userdata.get("state_file", "Internet_MQTT_state.jsonl"), "a", encoding="utf-8") as f:
+                        f.write(json.dumps(msg_dict) + "\n")
+            except:
+                pass
 
         def on_message_cb(c, userdata, msg):
             log_dict = {
@@ -233,6 +266,13 @@ def handle_connect(host, port, cid, user, pwd):
                 log_entry = f"{t_str} RX<< {payload_str}"
                 with open(userdata.get("log_file", "Internet_MQTT.log"), "a", encoding="utf-8") as f:
                     f.write(log_entry + "\n")
+                state_entry = json.dumps({
+                    "time": log_dict["time"],
+                    "dir": log_dict["dir"],
+                    "data_hex": log_dict["data"].hex()
+                })
+                with open(userdata.get("state_file", "Internet_MQTT_state.jsonl"), "a", encoding="utf-8") as f:
+                    f.write(state_entry + "\n")
             except Exception:
                 pass
             if len(userdata["logs"]) > 100:
@@ -310,6 +350,14 @@ def handle_publish(topic, qos, payload):
             log_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Internet_MQTT.log"))
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(log_entry + "\n")
+            state_entry = json.dumps({
+                "time": log_dict["time"],
+                "dir": log_dict["dir"],
+                "data_hex": log_dict["data"].hex()
+            })
+            state_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Internet_MQTT_state.jsonl"))
+            with open(state_path, "a", encoding="utf-8") as f:
+                f.write(state_entry + "\n")
         except:
             pass
         save_current_mqtt_config()
@@ -318,6 +366,23 @@ def handle_publish(topic, qos, payload):
 
 def handle_clear_logs():
     st.session_state.mqtt_logs.clear()
+    
+    # Clear both the readable log file and the JSONL state file
+    log_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Internet_MQTT.log"))
+    state_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Internet_MQTT_state.jsonl"))
+    
+    try:
+        if os.path.exists(log_file):
+            open(log_file, "w", encoding="utf-8").close()
+    except:
+        pass
+        
+    try:
+        if os.path.exists(state_file):
+            open(state_file, "w", encoding="utf-8").close()
+    except:
+        pass
+        
     save_current_mqtt_config()
 
 
