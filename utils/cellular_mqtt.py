@@ -83,7 +83,28 @@ def handle_com_connect(port, baudrate):
     try:
         if st.session_state.cell_serial and st.session_state.cell_serial.is_open:
             st.session_state.cell_serial.close()
-        st.session_state.cell_serial = serial.Serial(port, baudrate, timeout=0.1)
+            
+        databits = st.session_state.get("cell_databits_new", 8)
+        parity_str = st.session_state.get("cell_parity_new", "None")
+        stopbits = st.session_state.get("cell_stopbits_new", 1)
+        
+        parity_map = {
+            "None": serial.PARITY_NONE,
+            "Even": serial.PARITY_EVEN,
+            "Odd": serial.PARITY_ODD,
+            "Mark": serial.PARITY_MARK,
+            "Space": serial.PARITY_SPACE
+        }
+        p_val = parity_map.get(parity_str, serial.PARITY_NONE)
+        
+        st.session_state.cell_serial = serial.Serial(
+            port, 
+            baudrate, 
+            bytesize=databits, 
+            parity=p_val, 
+            stopbits=stopbits, 
+            timeout=0.1
+        )
         st.toast(f"Connected to {port}", icon="✅")
     except Exception as e:
         st.toast(f"COM error: {e}", icon="❌")

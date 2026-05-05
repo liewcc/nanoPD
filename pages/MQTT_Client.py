@@ -37,6 +37,9 @@ def save_current_mqtt_config():
         "cellular_payload": get_val("cell_payload_new", "cellular_payload", ""),
         "cellular_port_name": get_val("cell_com_port_new", "cellular_port_name", ""),
         "cellular_baud_rate": get_val("cell_baud_new", "cellular_baud_rate", 115200),
+        "cellular_data_bits": get_val("cell_databits_new", "cellular_data_bits", 8),
+        "cellular_parity": get_val("cell_parity_new", "cellular_parity", "None"),
+        "cellular_stop_bits": get_val("cell_stopbits_new", "cellular_stop_bits", 1),
         "inet_log_format": get_val("inet_log_format", "inet_log_format", "Auto"),
         "cell_log_format": get_val("cell_log_format", "cell_log_format", "Auto"),
         "cell_modbus_id_hex": get_val("cell_modbus_id_hex", "cell_modbus_id_hex", "0x01"),
@@ -435,17 +438,10 @@ with tab_internet:
                 with pw_col:
                     st.markdown('<p class="metric-label" style="margin:12px 0 0 0">PASSWORD</p>', unsafe_allow_html=True)
                     password = st.text_input("Password", value=st.session_state.mqtt_cfg.get("internet_pwd", ""), type="password", key="cfg_pwd", label_visibility="collapsed", placeholder="Optional")
-                c1, c2 = st.columns([0.6, 0.4])
-                with c1:
-                    if not is_connected:
-                        st.button("🔌 Connect", width="stretch", type="primary", on_click=handle_connect, args=(broker, port, client_id, username, password), key="inet_connect")
-                    else:
-                        st.button("🛑 Disconnect", width="stretch", type="secondary", on_click=handle_disconnect, key="inet_disconnect")
-                with c2:
-                    if is_connected:
-                        st.markdown('<p style="color:#00C853; font-weight:bold; padding-top:8px;">🟢 CONNECTED</p>', unsafe_allow_html=True)
-                    else:
-                        st.markdown('<p style="color:#FF5252; font-weight:bold; padding-top:8px;">🔴 DISCONNECTED</p>', unsafe_allow_html=True)
+                if not is_connected:
+                    st.button("🔌 Connect", width="stretch", type="primary", on_click=handle_connect, args=(broker, port, client_id, username, password), key="inet_connect")
+                else:
+                    st.button("🛑 Disconnect", width="stretch", type="secondary", on_click=handle_disconnect, key="inet_disconnect")
 
             # SUBSCRIPTION MANAGEMENT
             with st.container(border=True):
@@ -666,13 +662,36 @@ with tab_cellular:
                 baud_options = [9600, 19200, 38400, 57600, 115200]
                 saved_baud = st.session_state.mqtt_cfg.get("cellular_baud_rate", 115200)
                 baud_index = baud_options.index(saved_baud) if saved_baud in baud_options else 4
-                cp, cb, cbtn = st.columns([0.45, 0.3, 0.25])
+                db_opts = [5, 6, 7, 8]
+                saved_db = st.session_state.mqtt_cfg.get("cellular_data_bits", 8)
+                db_idx = db_opts.index(saved_db) if saved_db in db_opts else 3
+                
+                pa_opts = ["None", "Even", "Odd", "Mark", "Space"]
+                saved_pa = st.session_state.mqtt_cfg.get("cellular_parity", "None")
+                pa_idx = pa_opts.index(saved_pa) if saved_pa in pa_opts else 0
+                
+                sb_opts = [1, 1.5, 2]
+                saved_sb = st.session_state.mqtt_cfg.get("cellular_stop_bits", 1)
+                sb_idx = sb_opts.index(saved_sb) if saved_sb in sb_opts else 0
+
+                c_bd, c_db, c_pa, c_sb = st.columns([0.25, 0.25, 0.25, 0.25])
+                with c_bd:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">BAUDRATE</p>', unsafe_allow_html=True)
+                    cell_baud = st.selectbox("Baud", baud_options, index=baud_index, key="cell_baud_new", label_visibility="collapsed", disabled=cell_connected)
+                with c_db:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">DATA BITS</p>', unsafe_allow_html=True)
+                    st.selectbox("Data Bits", db_opts, index=db_idx, key="cell_databits_new", label_visibility="collapsed", disabled=cell_connected)
+                with c_pa:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">PARITY</p>', unsafe_allow_html=True)
+                    st.selectbox("Parity", pa_opts, index=pa_idx, key="cell_parity_new", label_visibility="collapsed", disabled=cell_connected)
+                with c_sb:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">STOP BITS</p>', unsafe_allow_html=True)
+                    st.selectbox("Stop Bits", sb_opts, index=sb_idx, key="cell_stopbits_new", label_visibility="collapsed", disabled=cell_connected)
+
+                cp, cbtn = st.columns([0.6, 0.4])
                 with cp:
                     st.markdown('<p class="metric-label" style="margin:4px 0 0 0">PORT</p>', unsafe_allow_html=True)
                     cell_port = st.selectbox("COM", ports, index=port_index, key="cell_com_port_new", label_visibility="collapsed", disabled=cell_connected)
-                with cb:
-                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">BAUDRATE</p>', unsafe_allow_html=True)
-                    cell_baud = st.selectbox("Baud", baud_options, index=baud_index, key="cell_baud_new", label_visibility="collapsed", disabled=cell_connected)
                 with cbtn:
                     st.markdown('<p class="metric-label" style="margin:4px 0 0 0">&nbsp;</p>', unsafe_allow_html=True)
                     if not cell_connected:
