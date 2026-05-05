@@ -171,6 +171,7 @@ st.markdown(f"""
         /* Fix height for the log block to push PAYLOAD container to the bottom */
         div[data-testid="stVerticalBlock"]:has(.layout-mcu-marker) pre {{
             height: 458px !important; overflow-y: auto !important; margin: 0 !important;
+            display: flex !important; flex-direction: column-reverse !important;
         }}
         /* Zero out Streamlit default bottom padding so no empty space appears below containers */
         section[data-testid="stMain"] > div {{ padding-bottom: 0 !important; }}
@@ -449,29 +450,7 @@ with tab_internet:
                     display_lines = [""]
                 inet_log_placeholder.code("\n".join(display_lines), language="text")
 
-                # Auto-scroll logs to bottom
-                if st.session_state.mqtt_logs:
-                    st.html("""
-                        <script>
-                        (function() {
-                            var parentDoc = window.parent && window.parent.document ? window.parent.document : document;
-                            function scrollLogsToBottom() {
-                                var markers = parentDoc.querySelectorAll('.layout-mcu-marker');
-                                markers.forEach(function(marker) {
-                                    var block = marker.closest('[data-testid="stVerticalBlock"]');
-                                    if (block) {
-                                        var pre = block.querySelector('pre');
-                                        if (pre) pre.scrollTop = pre.scrollHeight;
-                                    }
-                                });
-                            }
-                            scrollLogsToBottom();
-                            setTimeout(scrollLogsToBottom, 100);
-                            setTimeout(scrollLogsToBottom, 300);
-                            setTimeout(scrollLogsToBottom, 600);
-                        })();
-                        </script>
-                    """)
+
 
             # PAYLOAD & ACTIONS
             with st.container(border=True):
@@ -774,29 +753,7 @@ with tab_cellular:
                     
                 cell_log_placeholder.code("\n".join(display_lines), language="text")
 
-                # Auto-scroll logs to bottom (DOS-style)
-                if st.session_state.cell_logs:
-                    st.html("""
-                        <script>
-                        (function() {
-                            var parentDoc = window.parent && window.parent.document ? window.parent.document : document;
-                            function scrollLogsToBottom() {
-                                var markers = parentDoc.querySelectorAll('.layout-mcu-marker');
-                                markers.forEach(function(marker) {
-                                    var block = marker.closest('[data-testid="stVerticalBlock"]');
-                                    if (block) {
-                                        var pre = block.querySelector('pre');
-                                        if (pre) pre.scrollTop = pre.scrollHeight;
-                                    }
-                                });
-                            }
-                            scrollLogsToBottom();
-                            setTimeout(scrollLogsToBottom, 100);
-                            setTimeout(scrollLogsToBottom, 300);
-                            setTimeout(scrollLogsToBottom, 600);
-                        })();
-                        </script>
-                    """)
+
 
             # PAYLOAD & ACTIONS
             with st.container(border=True):
