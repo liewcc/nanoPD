@@ -44,13 +44,33 @@ def get_com_ports():
     return [p.device for p in serial.tools.list_ports.comports()]
 
 def _log_raw(direction: str, data: bytes):
+    t = time.time()
     st.session_state.cell_logs.append({
-        "time": time.time(),
+        "time": t,
         "dir": direction,
         "data": data
     })
     if len(st.session_state.cell_logs) > 200:
         st.session_state.cell_logs.pop(0)
+    
+    # Persistent Logging
+    try:
+        import os
+        log_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cellular_MQTT.log"))
+        
+        # Format: [HH:MM:SS.ms] DIR DATA (Hex)
+        tm = time.localtime(t)
+        ms = int((t % 1) * 1000)
+        ts_str = f"[{tm.tm_hour:02d}:{tm.tm_min:02d}:{tm.tm_sec:02d}.{ms:03d}]"
+        dir_sym = "RX<<" if direction == "RX" else "TX>>"
+        
+        # Clean hex for the log file
+        hex_data = data.hex(' ').upper()
+        
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"{ts_str} {dir_sym} {hex_data}\n")
+    except:
+        pass
 
 def _send_and_wait(ser, data: bytes, wait: float = 1.5, hide_tx: bool = False) -> bytes:
     ser.reset_input_buffer()
@@ -162,17 +182,19 @@ def handle_send_data(text=None):
         st.toast(f"Send error: {e}", icon="❌")
 
 def handle_read_serial():
-    """Read any pending bytes from serial."""
+    """Read any pending bytes from serial. Returns True if data was read."""
     ser = st.session_state.cell_serial
     if not ser or not ser.is_open:
-        return
+        return False
     try:
         if ser.in_waiting > 0:
             data = ser.read(ser.in_waiting)
             if data:
                 _log_raw("RX", data)
+                return True
     except:
         pass
+    return False
 
 def handle_clear_logs():
     st.session_state.cell_logs.clear()

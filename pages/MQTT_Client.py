@@ -7,6 +7,7 @@ from utils import cellular_mqtt
 import os
 import json
 from utils.config_utils import load_ui_config, save_ui_config, load_mqtt_config, save_mqtt_config
+from utils import mqtt_perf_tab
 
 def save_current_mqtt_config():
     def get_val(state_key, cfg_key, default_val):
@@ -93,6 +94,9 @@ if 'mqtt_auto_refresh' not in st.session_state:
     st.session_state.mqtt_auto_refresh = False
 if 'mqtt_shared_state' not in st.session_state:
     st.session_state.mqtt_shared_state = {"status": "disconnected"}
+
+# Keep track of log count for flicker-free auto-refresh
+st.session_state.prev_mqtt_log_count = len(st.session_state.mqtt_logs)
 
 # Initialize Cellular Modbus state for persistent configs
 if 'cell_modbus_id_hex' not in st.session_state:
@@ -443,7 +447,7 @@ def handle_clear_logs():
 # ═══════════════════════════════════════════════════════════════════════════
 # TABS
 # ═══════════════════════════════════════════════════════════════════════════
-tab_internet, tab_cellular = st.tabs(["🌐 Internet MQTT", "📶 Cellular MQTT"])
+tab_internet, tab_cellular, tab_perf = st.tabs(["🌐 Internet MQTT", "📶 Cellular MQTT", "📊 Performance"])
 is_connected = st.session_state.mqtt_shared_state.get("status") == "connected"
 
 # ─── TAB 1: INTERNET MQTT ───────────────────────────────────────────────────
@@ -526,7 +530,7 @@ with tab_internet:
                 with tc:
                     st.markdown('<p class="metric-label" style="margin:0">MESSAGE LOGS</p>', unsafe_allow_html=True)
                 with mc:
-                    st.radio("Log Format", ["ASCII", "HEX", "Auto"], horizontal=True, label_visibility="collapsed", key="inet_log_format")
+                    st.radio("Log Format", ["ASCII", "HEX", "Auto"], horizontal=True, label_visibility="collapsed", key="inet_log_format", on_change=save_current_mqtt_config)
                 with bc:
                     st.button("🗑️ Clear", width='stretch', key="clear_mqtt_log", on_click=handle_clear_logs)
                 
@@ -957,7 +961,7 @@ with tab_cellular:
                 with tc2:
                     st.markdown('<p class="metric-label" style="margin:0">MESSAGE LOGS</p>', unsafe_allow_html=True)
                 with mc2:
-                    st.radio("Log Format", ["ASCII", "HEX", "Auto"], horizontal=True, label_visibility="collapsed", key="cell_log_format")
+                    st.radio("Log Format", ["ASCII", "HEX", "Auto"], horizontal=True, label_visibility="collapsed", key="cell_log_format", on_change=save_current_mqtt_config)
                 with bc2:
                     st.button("🗑️ Clear", width='stretch', key="clear_cell_log_new", on_click=cellular_mqtt.handle_clear_logs)
                 
@@ -1077,17 +1081,39 @@ with tab_cellular:
                 with ca2:
                     st.button("📡 Publish Modbus", width="stretch", type="primary", disabled=not cell_connected, key="cell_modbus_pub_new", on_click=cellular_mqtt.handle_publish_modbus, help="Build Modbus RTU frame and publish via MQTT")
 
+# ─── TAB 3: PERFORMANCE ─────────────────────────────────────────────────────
+with tab_perf:
+    mqtt_perf_tab.render_perf_tab()
+
 # Automatically save the current configuration to config.json at the end of each rerun
 save_current_mqtt_config()
 
 # ─── Auto-Read Loops ─────────────────────────────────────────────────────────
-needs_rerun = False
-if st.session_state.mqtt_auto_refresh:
-    needs_rerun = True
-if cell_connected:
-    cellular_mqtt.handle_read_serial()
-    needs_rerun = True
-if needs_rerun:
-    time.sleep(0.2)
-    st.rerun()
+# To avoid flickering, we poll for new data inside a loop at the end of the script.
+# Streamlit will interrupt this loop if the user interacts with any widget.
+if cell_connected or st.session_state.mqtt_auto_refresh:
+    # Initialize log count to detect changes in background MQTT thread
+    if "prev_mqtt_log_count" not in st.session_state:
+        st.session_state.prev_mqtt_log_count = len(st.session_state.mqtt_logs)
+    
+    # Internal polling loop
+    while True:
+        found_new_data = False
+        
+        # 1. Check Cellular Serial
+        if cell_connected:
+            if cellular_mqtt.handle_read_serial():
+                found_new_data = True
+        
+        # 2. Check Internet MQTT Logs (updated by background thread)
+        if st.session_state.mqtt_auto_refresh:
+            current_count = len(st.session_state.mqtt_logs)
+            if current_count > st.session_state.prev_mqtt_log_count:
+                st.session_state.prev_mqtt_log_count = current_count
+                found_new_data = True
+        
+        if found_new_data:
+            st.rerun()
+            
+        time.sleep(0.5) # Poll every 500ms
 
