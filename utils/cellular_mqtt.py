@@ -22,6 +22,7 @@ _DEFAULTS = {
     "cell_task_cycle": 1,
     "cell_task_interval": 100,
     "cell_enable_identifier": True,
+    "cell_subs_ui": [{"topic": "", "qos": 0} for _ in range(4)], # State for 4 slots
 }
 
 def init_state():
@@ -285,46 +286,32 @@ def handle_provision():
         st.session_state.cell_provisioning = False
 
 # ─── Dynamic Subscription Management ─────────────────────────────────────────
-def handle_dtu_update_sub(topic, qos):
+def handle_dtu_update_sub(slot, topic, qos):
     """Dynamically update DTU subscription by breaking out of transparent mode."""
     ser = st.session_state.cell_serial
     if not ser or not ser.is_open:
         st.toast("COM not connected.", icon="⚠️")
         return
 
+    if not topic:
+        st.toast("Topic cannot be empty", icon="⚠️")
+        return
+
     time.sleep(1.0)
     if _enter_at_mode(ser):
-        # Find a free slot, default to 1 if we can't find one
-        free_slot = 1
-        hw_subs = st.session_state.get("cell_hw_subs", [])
-        used_slots = {s["slot"] for s in hw_subs}
-        for i in range(1, 5):
-            if i not in used_slots:
-                free_slot = i
-                break
-
-        cmd = f'AT+MQTTSUB{free_slot}="1","{topic}","{qos}"'
+        cmd = f'AT+MQTTSUB{slot}="1","{topic}","{qos}"'
         resp = _send_and_wait(ser, (cmd + "\r\n").encode('utf-8'), 1.5)
         
         _read_hw_state_in_at_mode(ser)
         _send_and_wait(ser, b'ATO\r\n', 1.0)
+        st.toast(f"Slot {slot} updated", icon="✅")
 
-def handle_dtu_unsubscribe():
+def handle_dtu_unsubscribe(slot):
     """Dynamically remove DTU subscription."""
     ser = st.session_state.cell_serial
     if not ser or not ser.is_open:
         st.toast("COM not connected.", icon="⚠️")
         return
-
-    # Find which slot to unsub — try all possible widget keys
-    selected = (
-        st.session_state.get("cell_unsub_select_new_1")
-        or st.session_state.get("cell_unsub_select_new_3")
-    )
-    slot = "1"
-    if selected and selected.startswith("SUB"):
-        # e.g., "SUB2: atk/sub2" -> "2"
-        slot = selected[3:selected.find(":")]
 
     time.sleep(1.0)
     if _enter_at_mode(ser):
@@ -334,6 +321,7 @@ def handle_dtu_unsubscribe():
         
         _read_hw_state_in_at_mode(ser)
         _send_and_wait(ser, b'ATO\r\n', 1.0)
+        st.toast(f"Slot {slot} unsubscribed", icon="✅")
 
 
 def _parse_mqtt_query_response(resp_bytes, prefix):
@@ -411,6 +399,14 @@ def _read_hw_state_in_at_mode(ser):
 
     st.session_state.cell_hw_subs = active_subs
     st.session_state.cell_hw_pub = hw_pub
+
+    # Update UI state for 4 slots
+    new_subs_ui = [{"topic": "", "qos": 0} for _ in range(4)]
+    for sub in active_subs:
+        idx = sub["slot"] - 1
+        if 0 <= idx < 4:
+            new_subs_ui[idx] = {"topic": sub["topic"], "qos": sub["qos"]}
+    st.session_state.cell_subs_ui = new_subs_ui
 
     # Also update the primary active_sub for backward compatibility
     if active_subs:
@@ -677,3 +673,51 @@ def handle_send_polling_list(polling_list):
         st.toast("Polling list saved! DTU is restarting...", icon="✅")
     else:
         st.toast("Failed to enter AT mode", icon="❌")
+
+def handle_check_network():
+    """Check LTE and network status via AT commands."""
+    ser = st.session_state.cell_serial
+    if not ser or not ser.is_open:
+        st.toast("COM not connected.", icon="⚠️")
+        return
+        
+    st.toast("Checking LTE and Network Info...", icon="⏳")
+    
+    info = {
+        "MODULE": "N/A", "SYSINFO": "N/A", "ICCID": "N/A",
+        "IMSI": "N/A", "SN": "N/A", "CLK": "N/A",
+        "IMEI": "N/A", "CSQ": "N/A"
+    }
+    
+    if _enter_at_mode(ser):
+        cmds = [
+            ("MODULE", b'AT+MODULE\r\n', "+MODULE:"),
+            ("SYSINFO", b'AT+SYSINFO\r\n', "+SYSINFO:"),
+            ("ICCID", b'AT+ICCID\r\n', "+ICCID:"),
+            ("IMSI", b'AT+IMSI\r\n', "+IMSI:"),
+            ("SN", b'AT+SN\r\n', "+SN:"),
+            ("CLK", b'AT+CLK\r\n', "+CLK:"),
+            ("IMEI", b'AT+IMEI\r\n', "+IMEI:"),
+            ("CSQ", b'AT+CSQ\r\n', "+CSQ:")
+        ]
+        
+        for key, cmd, prefix in cmds:
+            resp = _send_and_wait(ser, cmd, 1.0)
+            text = resp.decode('utf-8', errors='replace')
+            for line in text.splitlines():
+                line = line.strip()
+                if line.upper().startswith(prefix):
+                    try:
+                        val = line.split(":", 1)[1].strip()
+                        val = val.replace('"', '')
+                        info[key] = val
+                    except:
+                        pass
+                    break
+                    
+        _send_and_wait(ser, b'ATO\r\n', 1.0)
+        st.session_state.cell_network_info = info
+        st.toast("Network info updated.", icon="✅")
+    else:
+        st.toast("Failed to enter AT mode", icon="❌")
+

@@ -550,6 +550,7 @@ with tab_internet:
                             
                             fmt = log_format
                             custom_formatted = None
+                            modbus_packets = []
                             if fmt == "Auto":
                                 import re
                                 m = re.match(br'^(<\d+>)(.*)', raw_data)
@@ -568,7 +569,7 @@ with tab_internet:
                                             if not line:
                                                 continue
                                             cmd_part = line.split(':')[0].split('=')[0]
-                                            if cmd_part in st.session_state.get('known_at_patterns', set()) or line in st.session_state.get('known_at_patterns', set()) or line.upper().startswith('AT'):
+                                            if cmd_part in st.session_state.get('known_at_patterns', set()) or line in st.session_state.get('known_at_patterns', set()) or line.upper().startswith('AT') or line.startswith('+'):
                                                 is_at = True
                                                 break
                                     except:
@@ -577,13 +578,11 @@ with tab_internet:
                                     if is_at:
                                         fmt = "ASCII"
                                     else:
-                                        is_modbus = False
                                         if len(raw_data) >= 4:
                                             if cellular_mqtt.calculate_crc16(raw_data[:-2]) == raw_data[-2:]:
-                                                is_modbus = True
+                                                modbus_packets = [raw_data]
                                             else:
                                                 offset = 0
-                                                valid_count = 0
                                                 while offset + 4 <= len(raw_data):
                                                     fc = raw_data[offset + 1]
                                                     candidates = [8]
@@ -596,28 +595,38 @@ with tab_internet:
                                                         if offset + l <= len(raw_data):
                                                             pkt = raw_data[offset:offset+l]
                                                             if cellular_mqtt.calculate_crc16(pkt[:-2]) == pkt[-2:]:
-                                                                valid_count += 1
+                                                                modbus_packets.append(pkt)
                                                                 offset += l
                                                                 found = True
                                                                 break
-                                                    if not found:
-                                                        break
-                                                if valid_count > 0:
-                                                    is_modbus = True
-                                        if is_modbus:
-                                            fmt = "HEX"
+                                                    if not found: break
+                                        
+                                        if modbus_packets:
+                                            fmt = "MODBUS"
                                         else:
-                                            fmt = "ASCII"
+                                            try:
+                                                decoded_text = raw_data.decode('utf-8')
+                                                # Allow all printable ASCII (32-126) plus common whitespace
+                                                if decoded_text and all(32 <= ord(c) <= 126 or c in '\r\n\t' for c in decoded_text):
+                                                    fmt = "ASCII"
+                                                else:
+                                                    fmt = "HEX"
+                                            except:
+                                                fmt = "HEX"
 
-                            if custom_formatted is not None:
-                                formatted = custom_formatted
-                            elif fmt == "HEX":
-                                formatted = raw_data.hex(' ').upper()
-                            else:
-                                formatted = raw_data.decode('utf-8', errors='replace').replace('\r', '\\r').replace('\n', '\\n')
-                                
                             prefix = ">>" if direction == "TX" else "<<" if direction == "RX" else ""
-                            display_lines.append(f"{t_str}{direction}{prefix} {formatted}")
+                            if custom_formatted is not None:
+                                display_lines.append(f"{t_str}{direction}{prefix} {custom_formatted}")
+                            elif fmt == "MODBUS":
+                                for pkt in modbus_packets:
+                                    display_lines.append(f"{t_str}{direction}{prefix} {pkt.hex(' ').upper()}")
+                            elif fmt == "HEX":
+                                display_lines.append(f"{t_str}{direction}{prefix} {raw_data.hex(' ').upper()}")
+                            else:
+                                text = raw_data.decode('utf-8', errors='replace')
+                                for l in text.replace('\r\n', '\n').replace('\r', '\n').split('\n'):
+                                    if l.strip():
+                                        display_lines.append(f"{t_str}{direction}{prefix} {l}")
                     else:
                         display_lines.append(log)
                 
@@ -733,6 +742,31 @@ with tab_cellular:
                     else:
                         st.button("🛑 Disconnect", width="stretch", type="secondary", on_click=cellular_mqtt.handle_com_disconnect, key="cell_disconnect_new")
 
+            # LTE & Network Check
+            with st.container(border=True):
+                st.markdown('<p class="metric-label" style="margin:0 0 12px 0">📡 LTE & NETWORK INFO</p>', unsafe_allow_html=True)
+                n1, n2 = st.columns([0.7, 0.3])
+                with n1:
+                    st.markdown('<div style="font-size:0.85rem;color:#888;margin-top:8px;">Query device info, signal strength, and network status.</div>', unsafe_allow_html=True)
+                with n2:
+                    st.button("🔍 Check Network", width="stretch", type="secondary", disabled=not cell_connected, on_click=cellular_mqtt.handle_check_network, key="cell_check_net_btn")
+                
+                net_info = st.session_state.get("cell_network_info")
+                if net_info:
+                    st.divider()
+                    nc1, nc2 = st.columns(2)
+                    with nc1:
+                        st.markdown(f'<p class="metric-label" style="margin:0">MODULE</p><div style="font-size:0.9rem;font-weight:500;margin-bottom:8px;font-family:Consolas,monospace;">{net_info.get("MODULE", "N/A")}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<p class="metric-label" style="margin:0">SYSINFO</p><div style="font-size:0.9rem;font-weight:500;margin-bottom:8px;font-family:Consolas,monospace;">{net_info.get("SYSINFO", "N/A")}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<p class="metric-label" style="margin:0">ICCID</p><div style="font-size:0.9rem;font-weight:500;margin-bottom:8px;font-family:Consolas,monospace;">{net_info.get("ICCID", "N/A")}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<p class="metric-label" style="margin:0">CSQ (SIGNAL)</p><div style="font-size:0.9rem;font-weight:500;margin-bottom:8px;font-family:Consolas,monospace;">{net_info.get("CSQ", "N/A")}</div>', unsafe_allow_html=True)
+                    with nc2:
+                        st.markdown(f'<p class="metric-label" style="margin:0">SN</p><div style="font-size:0.9rem;font-weight:500;margin-bottom:8px;font-family:Consolas,monospace;">{net_info.get("SN", "N/A")}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<p class="metric-label" style="margin:0">IMEI</p><div style="font-size:0.9rem;font-weight:500;margin-bottom:8px;font-family:Consolas,monospace;">{net_info.get("IMEI", "N/A")}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<p class="metric-label" style="margin:0">IMSI</p><div style="font-size:0.9rem;font-weight:500;margin-bottom:8px;font-family:Consolas,monospace;">{net_info.get("IMSI", "N/A")}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<p class="metric-label" style="margin:0">CLK</p><div style="font-size:0.9rem;font-weight:500;margin-bottom:8px;font-family:Consolas,monospace;">{net_info.get("CLK", "N/A")}</div>', unsafe_allow_html=True)
+
+
             # DTU MQTT Provisioning
             with st.container(border=True):
                 st.markdown('<p class="metric-label" style="margin:0 0 12px 0">🚀 DTU MQTT PROVISIONING</p>', unsafe_allow_html=True)
@@ -764,56 +798,36 @@ with tab_cellular:
 
             # SUBSCRIPTION MANAGEMENT
             with st.container(border=True):
-                st.markdown('<p class="metric-label" style="margin:0 0 12px 0">SUBSCRIPTION MANAGEMENT</p>', unsafe_allow_html=True)
-                cs1, cs2, cs3 = st.columns([0.6, 0.15, 0.25])
-                with cs1:
-                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">TOPIC</p>', unsafe_allow_html=True)
-                    prov_sub = st.text_input("DTU Sub", key="prov_sub_new", label_visibility="collapsed")
-                with cs2:
-                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">QOS</p>', unsafe_allow_html=True)
-                    prov_sub_qos = st.selectbox("Sub QoS", [0, 1, 2], key="prov_sub_qos_new", label_visibility="collapsed")
-                with cs3:
-                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">&nbsp;</p>', unsafe_allow_html=True)
-                    st.button("➕ Subscribe", width="stretch", disabled=not cell_connected, key="cell_sub_btn_new", on_click=cellular_mqtt.handle_dtu_update_sub, args=(prov_sub, prov_sub_qos))
+                st.markdown('<p class="metric-label" style="margin:0 0 12px 0">SUBSCRIPTION MANAGEMENT (MAX 4 SLOTS)</p>', unsafe_allow_html=True)
                 
-                hw_subs = st.session_state.get("cell_hw_subs")
-                hw_pub = st.session_state.get("cell_hw_pub")
-                if hw_subs is not None:
-                    if hw_subs:
-                        sub_items = " | ".join([f"SUB{s['slot']}: {s['topic']} (Q{s['qos']})" for s in hw_subs])
-                        st.markdown(f'<p class="metric-label" style="margin:12px 0 4px 0">ACTIVE ({len(hw_subs)}): <span style="font-weight:normal;color:#888;">{sub_items}</span></p>', unsafe_allow_html=True)
-                        active_topics = [f"SUB{s['slot']}: {s['topic']}" for s in hw_subs]
-                        cus1, cus2 = st.columns([0.75, 0.25])
-                        with cus1:
-                            st.selectbox("Remove", active_topics, key="cell_unsub_select_new_1", label_visibility="collapsed")
-                        with cus2:
-                            st.button("➖ Unsub", width="stretch", key="cell_unsub_btn_new_1", disabled=not cell_connected, on_click=cellular_mqtt.handle_dtu_unsubscribe)
-                    else:
-                        st.markdown('<p class="metric-label" style="margin:12px 0 4px 0">ACTIVE (0): <span style="font-weight:normal;color:#888;">None (verified from HW)</span></p>', unsafe_allow_html=True)
-                        cus1, cus2 = st.columns([0.75, 0.25])
-                        with cus1:
-                            st.selectbox("Remove", ["None"], key="cell_unsub_select_new_2", label_visibility="collapsed", disabled=True)
-                        with cus2:
-                            st.button("➖ Unsub", width="stretch", key="cell_unsub_btn_new_2", disabled=True)
-                    if hw_pub:
-                        st.markdown(f'<p class="metric-label" style="margin:8px 0 0 0">📤 HW PUB: <span style="font-weight:normal;color:#888;">{hw_pub["topic"]} (Q{hw_pub["qos"]})</span></p>', unsafe_allow_html=True)
-                else:
-                    active_dtu_sub = st.session_state.get("cell_active_sub")
-                    active_dtu_qos = st.session_state.get("cell_active_qos")
-                    if active_dtu_sub:
-                        st.markdown(f'<p class="metric-label" style="margin:12px 0 4px 0">ACTIVE (1): <span style="font-weight:normal;color:#888;">{active_dtu_sub} (Q{active_dtu_qos})</span></p>', unsafe_allow_html=True)
-                        cus1, cus2 = st.columns([0.75, 0.25])
-                        with cus1:
-                            st.selectbox("Remove", [active_dtu_sub], key="cell_unsub_select_new_3", label_visibility="collapsed")
-                        with cus2:
-                            st.button("➖ Unsub", width="stretch", key="cell_unsub_btn_new_3", disabled=not cell_connected, on_click=cellular_mqtt.handle_dtu_unsubscribe)
-                    else:
-                        st.markdown('<p class="metric-label" style="margin:12px 0 4px 0">ACTIVE (0): <span style="font-weight:normal;color:#888;">None</span></p>', unsafe_allow_html=True)
-                        cus1, cus2 = st.columns([0.75, 0.25])
-                        with cus1:
-                            st.selectbox("Remove", ["None"], key="cell_unsub_select_new_4", label_visibility="collapsed", disabled=True)
-                        with cus2:
-                            st.button("➖ Unsub", width="stretch", key="cell_unsub_btn_new_4", disabled=True)
+                subs_ui = st.session_state.get("cell_subs_ui", [{"topic": "", "qos": 0} for _ in range(4)])
+                
+                # Header
+                h1, h2, h3, h4 = st.columns([0.45, 0.15, 0.2, 0.2])
+                with h1: st.markdown('<p class="metric-label" style="margin:0">TOPIC</p>', unsafe_allow_html=True)
+                with h2: st.markdown('<p class="metric-label" style="margin:0">QOS</p>', unsafe_allow_html=True)
+                with h3: st.markdown('<p class="metric-label" style="margin:0">&nbsp;</p>', unsafe_allow_html=True)
+                with h4: st.markdown('<p class="metric-label" style="margin:0">&nbsp;</p>', unsafe_allow_html=True)
+
+                for i in range(4):
+                    sub = subs_ui[i]
+                    r1, r2, r3, r4 = st.columns([0.45, 0.15, 0.2, 0.2])
+                    with r1:
+                        # Use a unique key and value from state
+                        topic_val = st.text_input(f"T{i}", value=sub["topic"], key=f"cell_sub_t_{i}", label_visibility="collapsed")
+                    with r2:
+                        qos_val = st.selectbox(f"Q{i}", [0, 1, 2], index=int(sub["qos"]), key=f"cell_sub_q_{i}", label_visibility="collapsed")
+                    with r3:
+                        st.button("➕ Sub", key=f"btn_sub_{i}", width="stretch", disabled=not cell_connected, 
+                                  on_click=cellular_mqtt.handle_dtu_update_sub, args=(i+1, topic_val, qos_val))
+                    with r4:
+                        st.button("➖ Unsub", key=f"btn_unsub_{i}", width="stretch", disabled=not cell_connected,
+                                  on_click=cellular_mqtt.handle_dtu_unsubscribe, args=(i+1,))
+                
+                st.markdown('<div style="margin-top:12px;"></div>', unsafe_allow_html=True)
+                st.button("🔄 Reload Subscriptions", width="stretch", type="secondary", 
+                          disabled=not cell_connected, on_click=cellular_mqtt.handle_sync_hw_state,
+                          help="Re-read all subscription slots from DTU hardware")
 
             # PUBLISH MESSAGE
             with st.container(border=True):
@@ -965,6 +979,7 @@ with tab_cellular:
                         
                         fmt = log_format
                         custom_formatted = None
+                        modbus_packets = []
                         if fmt == "Auto":
                             import re
                             m = re.match(br'^(<\d+>)(.*)', raw_data)
@@ -983,7 +998,7 @@ with tab_cellular:
                                         if not line:
                                             continue
                                         cmd_part = line.split(':')[0].split('=')[0]
-                                        if cmd_part in st.session_state.get('known_at_patterns', set()) or line in st.session_state.get('known_at_patterns', set()) or line.upper().startswith('AT'):
+                                        if cmd_part in st.session_state.get('known_at_patterns', set()) or line in st.session_state.get('known_at_patterns', set()) or line.upper().startswith('AT') or line.startswith('+'):
                                             is_at = True
                                             break
                                 except:
@@ -992,13 +1007,11 @@ with tab_cellular:
                                 if is_at:
                                     fmt = "ASCII"
                                 else:
-                                    is_modbus = False
                                     if len(raw_data) >= 4:
                                         if cellular_mqtt.calculate_crc16(raw_data[:-2]) == raw_data[-2:]:
-                                            is_modbus = True
+                                            modbus_packets = [raw_data]
                                         else:
                                             offset = 0
-                                            valid_count = 0
                                             while offset + 4 <= len(raw_data):
                                                 fc = raw_data[offset + 1]
                                                 candidates = [8]
@@ -1011,28 +1024,38 @@ with tab_cellular:
                                                     if offset + l <= len(raw_data):
                                                         pkt = raw_data[offset:offset+l]
                                                         if cellular_mqtt.calculate_crc16(pkt[:-2]) == pkt[-2:]:
-                                                            valid_count += 1
+                                                            modbus_packets.append(pkt)
                                                             offset += l
                                                             found = True
                                                             break
-                                                if not found:
-                                                    break
-                                            if valid_count > 0:
-                                                is_modbus = True
-                                    if is_modbus:
-                                        fmt = "HEX"
+                                                if not found: break
+                                    
+                                    if modbus_packets:
+                                        fmt = "MODBUS"
                                     else:
-                                        fmt = "ASCII"
+                                        try:
+                                            decoded_text = raw_data.decode('utf-8')
+                                            # Allow all printable ASCII (32-126) plus common whitespace
+                                            if decoded_text and all(32 <= ord(c) <= 126 or c in '\r\n\t' for c in decoded_text):
+                                                fmt = "ASCII"
+                                            else:
+                                                fmt = "HEX"
+                                        except:
+                                            fmt = "HEX"
 
-                        if custom_formatted is not None:
-                            formatted = custom_formatted
-                        elif fmt == "HEX":
-                            formatted = raw_data.hex(' ').upper()
-                        else:
-                            formatted = raw_data.decode('utf-8', errors='replace').replace('\r', '\\r').replace('\n', '\\n')
-                            
                         prefix = ">>" if direction == "TX" else "<<" if direction == "RX" else ""
-                        display_lines.append(f"{t_str}{direction}{prefix} {formatted}")
+                        if custom_formatted is not None:
+                            display_lines.append(f"{t_str}{direction}{prefix} {custom_formatted}")
+                        elif fmt == "MODBUS":
+                            for pkt in modbus_packets:
+                                display_lines.append(f"{t_str}{direction}{prefix} {pkt.hex(' ').upper()}")
+                        elif fmt == "HEX":
+                            display_lines.append(f"{t_str}{direction}{prefix} {raw_data.hex(' ').upper()}")
+                        else:
+                            text = raw_data.decode('utf-8', errors='replace')
+                            for l in text.replace('\r\n', '\n').replace('\r', '\n').split('\n'):
+                                if l.strip():
+                                    display_lines.append(f"{t_str}{direction}{prefix} {l}")
                     else:
                         # Fallback for old logs stored as strings
                         display_lines.append(log)
