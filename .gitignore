@@ -31,4 +31,4 @@ run_test.bat
 diag_dtu.py
 reset_dtu.py
 run_reset.bat
-D40_knowledge.md
+all parameter.txt
