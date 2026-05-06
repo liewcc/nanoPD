@@ -69,7 +69,7 @@ with st.container(border=True):
         """,
         unsafe_allow_html=True,
     )
-    col1, col2, col3 = st.columns([6, 1, 1], vertical_alignment="bottom")
+    col1, col2, col3, col4 = st.columns([5, 1, 1, 1], vertical_alignment="bottom")
     with col1:
         if has_update:
             st.markdown(
@@ -98,6 +98,17 @@ with st.container(border=True):
                 st.error(f"Update failed: {e}")
     with col3:
         st.link_button("GitHub", "https://github.com/liewcc/nanoPD", width="stretch")
+    with col4:
+        if st.button("📁 Root", width="stretch", help="Open project root in File Explorer"):
+            try:
+                # Open the project root directory
+                root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+                if os.name == 'nt':
+                    os.startfile(root_path)
+                else:
+                    subprocess.run(["xdg-open", root_path])
+            except Exception as e:
+                st.error(f"Could not open explorer: {e}")
 
 # COM ports section — auto-refresh every 3 seconds using @st.fragment
 @st.fragment(run_every=3)

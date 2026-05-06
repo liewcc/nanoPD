@@ -21,7 +21,7 @@ def _sidebar_occupied_ports_panel():
         if occupied_ports:
             ports_str = ", ".join(occupied_ports)
             st.markdown(f"""
-                <div style='background:#fffbeb; border:1px solid #fde68a; color:#92400e; padding:12px; border-radius:8px; margin-bottom:0; margin-top:-14px; font-size:0.85em;'>
+                <div style='background:#fffbeb; border:1px solid #fde68a; color:#92400e; padding:12px; border-radius:8px; margin-bottom:0; margin-top:0; font-size:0.85em;'>
                     <div style='font-weight:700; display:flex; align-items:center; gap:6px;'>
                         🔒 COM PORT IN USE
                     </div>
@@ -37,7 +37,7 @@ def render_mqtt_status_panel():
     if state_obj.get("status") == "connected":
         host = st.session_state.get("mqtt_cfg", {}).get("internet_host", "Unknown Broker")
         st.markdown(f"""
-            <div style='background:#eff6ff; border:1px solid #bfdbfe; color:#1e3a8a; padding:12px; border-radius:8px; margin-bottom:0; margin-top:-14px; font-size:0.85em;'>
+            <div style='background:#eff6ff; border:1px solid #bfdbfe; color:#1e3a8a; padding:12px; border-radius:8px; margin-bottom:0; margin-top:0; font-size:0.85em;'>
                 <div style='font-weight:700; display:flex; align-items:center; gap:6px;'>
                     🌐 INTERNET MQTT ACTIVE
                 </div>

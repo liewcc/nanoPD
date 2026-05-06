@@ -160,7 +160,6 @@ def render_perf_tab():
             for i, i_log in enumerate(inet_data):
                 if i in used_inet_indices: continue
                 rx_data = i_log["data"]
-                # Use 'in' to match even if the identifier header is missing or corrupted
                 if pkt in rx_data:
                     if i_log["time"] > (cell_time - 1.5):
                         matched_rx = i_log
@@ -173,12 +172,21 @@ def render_perf_tab():
             
             if matched_rx:
                 latency = matched_rx["time"] - cell_time
+                status = "Success"
+                legend = "Success"
+                
+                # Simple check: if raw data starts directly with the modbus packet, 
+                # then the identifier header is missing/damaged.
+                if raw_data.lstrip(b'\r\n ')[:3] == pkt[:3]:
+                    status = "Success (Corrupted Header)"
+                    legend = "Corrupted"
+                
                 data_points.append({
                     "Timestamp": ts_str,
                     "Delay": max(0.001, latency),
-                    "Status": "Success",
+                    "Status": status,
                     "FullTime": cell_time,
-                    "legend": "Success"
+                    "legend": legend
                 })
             else:
                 data_points.append({
@@ -198,11 +206,12 @@ def render_perf_tab():
 
     # --- Render Metrics (GemiPersona Style) ---
     df = pd.DataFrame(data_points).sort_values("FullTime")
-    rec_count = len(df[df["Status"] == "Success"])
-    pen_count = len(df[df["Status"] != "Success"])
-    avg_lat = df[df["Status"] == "Success"]["Delay"].mean() if rec_count > 0 else 0
+    rec_count = len(df[df["legend"] == "Success"])
+    cor_count = len(df[df["legend"] == "Corrupted"])
+    pen_count = len(df[df["legend"] == "Fail"])
+    avg_lat = df[df["legend"].isin(["Success", "Corrupted"])]["Delay"].mean() if (rec_count + cor_count) > 0 else 0
 
-    m1, m2, m3 = st.columns(3)
+    m1, m2, m3, m4 = st.columns(4)
     with m1:
         st.markdown(f"""
             <div class="dashboard-card">
@@ -213,15 +222,22 @@ def render_perf_tab():
     with m2:
         st.markdown(f"""
             <div class="dashboard-card">
-                <div class="metric-label">⏳ Pending / Lost</div>
-                <div class="metric-value" style="color: #ff9999;">{pen_count}<span class="metric-unit">pkts</span></div>
+                <div class="metric-label">⚠️ Corrupted</div>
+                <div class="metric-value" style="color: #e74c3c;">{cor_count}<span class="metric-unit">pkts</span></div>
             </div>
         """, unsafe_allow_html=True)
     with m3:
         st.markdown(f"""
             <div class="dashboard-card">
+                <div class="metric-label">⏳ Pending</div>
+                <div class="metric-value" style="color: #ff9999;">{pen_count}<span class="metric-unit">pkts</span></div>
+            </div>
+        """, unsafe_allow_html=True)
+    with m4:
+        st.markdown(f"""
+            <div class="dashboard-card">
                 <div class="metric-label">⏱ Avg Latency</div>
-                <div class="metric-value">{avg_lat:.3f}<span class="metric-unit">s</span></div>
+                <div class="metric-value">{avg_lat*1000:.1f}<span class="metric-unit">ms</span></div>
             </div>
         """, unsafe_allow_html=True)
 
@@ -230,18 +246,30 @@ def render_perf_tab():
     
     # Altair Chart construction matching GemiPersona
     df["Sequence"] = range(1, len(df) + 1)
-    df["Minutes"] = df["Delay"] / 60.0 # Match the 'Minutes' y-axis in GemiPersona
+    df["Delay_ms"] = df["Delay"] * 1000
+    
+    def format_delay_ui(d):
+        if d < 1.0:
+            return f"{int(d * 1000)}ms"
+        elif d < 60.0:
+            return f"{d:.1f}s"
+        else:
+            mm = int(d // 60)
+            ss = int(d % 60)
+            return f"{mm}m {ss}s"
+    
+    df["Delay_Time"] = df["Delay"].apply(format_delay_ui)
     
     # Colors matching GemiPersona's lr list
-    ll = ['Success', 'Fail']
-    lr = ['#2ecc71', '#ff9999']
+    ll = ['Success', 'Fail', 'Corrupted']
+    lr = ['#2ecc71', '#ff9999', '#e74c3c']
     
     chart = alt.Chart(df).mark_bar().encode(
         x=alt.X('Sequence:Q', title="Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
-        y=alt.Y('Delay:Q', title="Delay (seconds)", scale=alt.Scale(type='symlog')),
+        y=alt.Y('Delay_ms:Q', title="Delay (ms)", scale=alt.Scale(type='symlog'), axis=alt.Axis(tickMinStep=10)),
         color=alt.Color('legend:N', scale=alt.Scale(domain=ll, range=lr),
-                        legend=alt.Legend(title=None, orient='bottom', columns=2)),
-        tooltip=['Timestamp', 'Delay', 'Status']
+                        legend=alt.Legend(title=None, orient='bottom', columns=3)),
+        tooltip=['Timestamp', alt.Tooltip('Delay_Time:N', title='Delay Time'), 'Status']
     ).properties(height=400).interactive(bind_y=False)
 
     st.altair_chart(chart, width="stretch")

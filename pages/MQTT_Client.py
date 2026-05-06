@@ -50,6 +50,9 @@ def save_current_mqtt_config():
         "cell_modbus_addr_dec": get_val("cell_modbus_addr_dec", "cell_modbus_addr_dec", "0"),
         "cell_modbus_qty": get_val("cell_modbus_qty", "cell_modbus_qty", 1),
         "cell_enable_identifier": get_val("cell_enable_identifier", "cell_enable_identifier", True),
+        "cell_identifier_format": get_val("cell_identifier_format", "cell_identifier_format", "<%d>"),
+        "cell_task_mode": get_val("cell_task_mode", "cell_task_mode", "TRANS"),
+        "cell_work_mode": get_val("cell_work_mode", "cell_work_mode", "MQTT"),
         "mqtt_subscriptions": dict(st.session_state.get("mqtt_subscriptions", st.session_state.mqtt_cfg.get("mqtt_subscriptions", {})))
     }
     st.session_state.mqtt_cfg = cfg
@@ -123,6 +126,15 @@ if 'cell_log_format' not in st.session_state:
     st.session_state.cell_log_format = st.session_state.mqtt_cfg.get("cell_log_format", "Auto")
 if 'cell_enable_identifier' not in st.session_state:
     st.session_state.cell_enable_identifier = st.session_state.mqtt_cfg.get("cell_enable_identifier", True)
+if 'cell_identifier_format' not in st.session_state:
+    st.session_state.cell_identifier_format = st.session_state.mqtt_cfg.get("cell_identifier_format", "<%d>")
+if 'cell_hrt_tm' in st.session_state: del st.session_state.cell_hrt_tm
+if 'cell_hrt_dt' in st.session_state: del st.session_state.cell_hrt_dt
+if 'cell_hrt_en' in st.session_state: del st.session_state.cell_hrt_en
+if 'cell_task_mode' not in st.session_state:
+    st.session_state.cell_task_mode = st.session_state.mqtt_cfg.get("cell_task_mode", "TRANS")
+if 'cell_work_mode' not in st.session_state:
+    st.session_state.cell_work_mode = st.session_state.mqtt_cfg.get("cell_work_mode", "MQTT")
 
 if 'known_at_patterns' not in st.session_state:
     known_patterns = {"+++", "atk", "ATK", "OK", "ERROR", "AT"}
@@ -745,19 +757,23 @@ with tab_cellular:
                         st.button("🔌 Connect", width="stretch", type="primary", on_click=cellular_mqtt.handle_com_connect, args=(cell_port, cell_baud), key="cell_connect_new")
                     else:
                         st.button("🛑 Disconnect", width="stretch", type="secondary", on_click=cellular_mqtt.handle_com_disconnect, key="cell_disconnect_new")
+                
+                st.button(
+                    "🚀 Sync & Provision",
+                    width="stretch", type="primary",
+                    disabled=not cell_connected or st.session_state.get("cell_provisioning", False),
+                    on_click=lambda: [save_current_mqtt_config(), cellular_mqtt.handle_provision()],
+                    key="cell_provision_new",
+                    help="Apply config to DTU"
+                )
 
             # LTE & Network Check
             with st.container(border=True):
                 st.markdown('<p class="metric-label" style="margin:0 0 12px 0">📡 LTE & NETWORK INFO</p>', unsafe_allow_html=True)
-                n1, n2 = st.columns([0.7, 0.3])
-                with n1:
-                    st.markdown('<div style="font-size:0.85rem;color:#888;margin-top:8px;">Query device info, signal strength, and network status.</div>', unsafe_allow_html=True)
-                with n2:
-                    st.button("🔍 Check Network", width="stretch", type="secondary", disabled=not cell_connected, on_click=cellular_mqtt.handle_check_network, key="cell_check_net_btn")
+                st.button("🔍 Check Network", width="stretch", type="secondary", disabled=not cell_connected, on_click=cellular_mqtt.handle_check_network, key="cell_check_net_btn")
                 
                 net_info = st.session_state.get("cell_network_info")
                 if net_info:
-                    st.divider()
                     nc1, nc2 = st.columns(2)
                     with nc1:
                         st.markdown(f'<p class="metric-label" style="margin:0">MODULE</p><div style="font-size:0.9rem;font-weight:500;margin-bottom:8px;font-family:Consolas,monospace;">{net_info.get("MODULE", "N/A")}</div>', unsafe_allow_html=True)
@@ -771,9 +787,15 @@ with tab_cellular:
                         st.markdown(f'<p class="metric-label" style="margin:0">CLK</p><div style="font-size:0.9rem;font-weight:500;margin-bottom:8px;font-family:Consolas,monospace;">{net_info.get("CLK", "N/A")}</div>', unsafe_allow_html=True)
 
 
-            # DTU MQTT Provisioning
+            # Working Mode & MQTT Config
             with st.container(border=True):
-                st.markdown('<p class="metric-label" style="margin:0 0 12px 0">🚀 DTU MQTT PROVISIONING</p>', unsafe_allow_html=True)
+                st.markdown('<p class="metric-label" style="margin:0 0 12px 0">📋 WORKING MODE</p>', unsafe_allow_html=True)
+                
+                wm_opts = ["NET", "HTTP", "MQTT", "ALIYUN", "ONENET", "RNDIS"]
+                st.radio("Work Mode", wm_opts, horizontal=True, key="cell_work_mode", label_visibility="collapsed", on_change=save_current_mqtt_config, 
+                         format_func=lambda x: "Alibaba Cloud" if x == "ALIYUN" else x)
+                
+                st.markdown('<p class="metric-label" style="margin:12px 0 12px 0">MQTT CONFIGURATION</p>', unsafe_allow_html=True)
                 pi_ip, pi_port, pi_cid = st.columns([0.4, 0.2, 0.4])
                 with pi_ip:
                     st.markdown('<p class="metric-label" style="margin:4px 0 0 0">BROKER IP</p>', unsafe_allow_html=True)
@@ -791,20 +813,25 @@ with tab_cellular:
                 with pp:
                     st.markdown('<p class="metric-label" style="margin:12px 0 0 0">PASSWORD</p>', unsafe_allow_html=True)
                     prov_pwd = st.text_input("DTU Pwd", value=st.session_state.mqtt_cfg.get("cellular_pwd", ""), type="password", key="prov_pwd_new", label_visibility="collapsed", placeholder="Optional")
-                st.button(
-                    "🚀 One-Click Provision",
-                    width="stretch", type="primary",
-                    disabled=not cell_connected or st.session_state.cell_provisioning,
-                    on_click=lambda: [save_current_mqtt_config(), cellular_mqtt.handle_provision()],
-                    key="cell_provision_new",
-                    help="Apply config to DTU"
-                )
+                
+                st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
+                sa1, sa2 = st.columns(2)
+                with sa1:
+                    st.button("📤 Apply Mode & Config", width="stretch", type="primary", disabled=not cell_connected, on_click=cellular_mqtt.handle_apply_work_mode)
+                with sa2:
+                    st.button("🔄 Sync HW State", width="stretch", type="secondary", disabled=not cell_connected, on_click=cellular_mqtt.handle_sync_hw_state, help="Query current mode and subscriptions from DTU")
 
             # SUBSCRIPTION MANAGEMENT
             with st.container(border=True):
                 st.markdown('<p class="metric-label" style="margin:0 0 12px 0">SUBSCRIPTION MANAGEMENT (MAX 4 SLOTS)</p>', unsafe_allow_html=True)
                 
                 subs_ui = st.session_state.get("cell_subs_ui", [{"topic": "", "qos": 0} for _ in range(4)])
+                # Ensure individual widget keys are initialized in session state
+                for i, sub in enumerate(subs_ui):
+                    if f"cell_sub_t_{i}" not in st.session_state:
+                        st.session_state[f"cell_sub_t_{i}"] = sub["topic"]
+                    if f"cell_sub_q_{i}" not in st.session_state:
+                        st.session_state[f"cell_sub_q_{i}"] = sub["qos"]
                 
                 # Header
                 h1, h2, h3, h4 = st.columns([0.45, 0.15, 0.2, 0.2])
@@ -817,10 +844,11 @@ with tab_cellular:
                     sub = subs_ui[i]
                     r1, r2, r3, r4 = st.columns([0.45, 0.15, 0.2, 0.2])
                     with r1:
-                        # Use a unique key and value from state
-                        topic_val = st.text_input(f"T{i}", value=sub["topic"], key=f"cell_sub_t_{i}", label_visibility="collapsed")
+                        # Use a unique key; do not provide 'value' when using Session State API
+                        topic_val = st.text_input(f"T{i}", key=f"cell_sub_t_{i}", label_visibility="collapsed")
                     with r2:
-                        qos_val = st.selectbox(f"Q{i}", [0, 1, 2], index=int(sub["qos"]), key=f"cell_sub_q_{i}", label_visibility="collapsed")
+                        # Use a unique key; do not provide 'index' when using Session State API
+                        qos_val = st.selectbox(f"Q{i}", [0, 1, 2], key=f"cell_sub_q_{i}", label_visibility="collapsed")
                     with r3:
                         st.button("➕ Sub", key=f"btn_sub_{i}", width="stretch", disabled=not cell_connected, 
                                   on_click=cellular_mqtt.handle_dtu_update_sub, args=(i+1, topic_val, qos_val))
@@ -905,15 +933,27 @@ with tab_cellular:
                         frame.extend(cellular_mqtt.calculate_crc16(frame))
                         
                         cmd_hex = frame.hex(' ').upper()
+                        cmd_hex_no_space = frame.hex().upper()
                         st.markdown('<p class="metric-label" style="margin:12px 0 4px 0">GENERATED COMMAND (HEX)</p>', unsafe_allow_html=True)
-                        st.markdown('<div class="compact-code-marker" style="display:none;"></div>', unsafe_allow_html=True)
-                        st.code(cmd_hex, language="text")
+                        c_hex1, c_hex2 = st.columns(2)
+                        with c_hex1:
+                            st.markdown('<div class="compact-code-marker" style="display:none;"></div>', unsafe_allow_html=True)
+                            st.code(cmd_hex, language="text")
+                        with c_hex2:
+                            st.markdown('<div class="compact-code-marker" style="display:none;"></div>', unsafe_allow_html=True)
+                            st.code(cmd_hex_no_space, language="text")
+                        
+                        st.button("📡 Publish Modbus Frame", width="stretch", type="secondary", disabled=not cell_connected, key="modbus_pub_btn_full", on_click=cellular_mqtt.handle_publish_modbus, help="Build Modbus RTU frame and publish via MQTT")
                     except ValueError:
                         pass
 
             # POLLING CONTAINER
             with st.container(border=True):
                 st.markdown('<p class="metric-label" style="margin:0 0 12px 0">🔄 POLLING CONFIGURATION</p>', unsafe_allow_html=True)
+                
+                st.markdown('<p class="metric-label" style="margin:4px 0 0 0">DATA PACKAGING MODE</p>', unsafe_allow_html=True)
+                mode_options = ["OFF", "TRANS", "MODBUS"]
+                st.radio("Task Mode", mode_options, horizontal=True, key="cell_task_mode", label_visibility="collapsed", on_change=save_current_mqtt_config)
                 
                 tt_c1, tt_c2 = st.columns(2)
                 with tt_c1:
@@ -923,7 +963,11 @@ with tab_cellular:
                     st.markdown('<p class="metric-label" style="margin:4px 0 0 0">INTERVAL (ms)</p>', unsafe_allow_html=True)
                     st.number_input("Interval", min_value=10, max_value=5000, value=None, key="cell_task_interval", label_visibility="collapsed", help="Delay between each command")
 
-                st.checkbox("Enable Identifier (Append Key Name to data)", key="cell_enable_identifier", help="Enables AT+TASKDIST=\"1\" to prepend the Key Name to reported data")
+                id1, id2 = st.columns([0.6, 0.4])
+                with id1:
+                    st.checkbox("Enable Identifier (Append Key Name to data)", key="cell_enable_identifier", help="Enables AT+TASKDIST=\"1\" to prepend the Key Name to reported data")
+                with id2:
+                    st.text_input("Format", key="cell_identifier_format", label_visibility="collapsed", help="Identifier format, e.g. <%d>")
 
                 st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
 
@@ -1075,11 +1119,7 @@ with tab_cellular:
             with st.container(border=True):
                 st.markdown('<p class="metric-label" style="margin:0 0 12px 0">PAYLOAD</p>', unsafe_allow_html=True)
                 cell_payload = st.text_input("Payload", value=st.session_state.mqtt_cfg.get("cellular_payload", "Hello from DTU!"), key="cell_payload_new", label_visibility="collapsed")
-                ca1, ca2 = st.columns([0.5, 0.5])
-                with ca1:
-                    st.button("📤 Publish", width="stretch", type="primary", disabled=not cell_connected, key="cell_send_new", on_click=cellular_mqtt.handle_send_data)
-                with ca2:
-                    st.button("📡 Publish Modbus", width="stretch", type="primary", disabled=not cell_connected, key="cell_modbus_pub_new", on_click=cellular_mqtt.handle_publish_modbus, help="Build Modbus RTU frame and publish via MQTT")
+                st.button("📤 Publish Payload", width="stretch", type="primary", disabled=not cell_connected, key="cell_send_new", on_click=cellular_mqtt.handle_send_data)
 
 # ─── TAB 3: PERFORMANCE ─────────────────────────────────────────────────────
 with tab_perf:
