@@ -8,6 +8,7 @@ import os
 import json
 from utils.config_utils import load_ui_config, save_ui_config, load_mqtt_config, save_mqtt_config
 from utils import mqtt_perf_tab
+import pandas as pd
 
 def save_current_mqtt_config():
     def get_val(state_key, cfg_key, default_val):
@@ -57,6 +58,40 @@ def save_current_mqtt_config():
     }
     st.session_state.mqtt_cfg = cfg
     save_mqtt_config(cfg)
+
+# ─── Global Callbacks for Buttons ──────────────────────────────────────────
+def apply_mqtt_conn_callback():
+    save_current_mqtt_config()
+    cellular_mqtt.handle_apply_mqtt_config()
+
+def sync_all_callback():
+    save_current_mqtt_config()
+    cellular_mqtt.handle_provision()
+
+def apply_subs_callback():
+    new_subs = []
+    for j in range(4):
+        new_subs.append({
+            "Active": st.session_state.get(f"cell_sub_en_{j}", False),
+            "Topic": st.session_state.get(f"cell_sub_t_{j}", ""),
+            "QoS": st.session_state.get(f"cell_sub_q_{j}", 0)
+        })
+    cellular_mqtt.handle_apply_subscriptions(new_subs)
+
+def apply_pubs_callback():
+    new_pubs = []
+    for j in range(4):
+        new_pubs.append({
+            "Active": st.session_state.get(f"cell_pub_en_{j}", False),
+            "Topic": st.session_state.get(f"cell_pub_t_{j}", ""),
+            "QoS": st.session_state.get(f"cell_pub_q_{j}", 0),
+            "Retain": st.session_state.get(f"cell_pub_r_{j}", False)
+        })
+    cellular_mqtt.handle_apply_publishing(new_pubs)
+
+def send_polling_callback():
+    # Use the polling list from session state (updated by data_editor)
+    cellular_mqtt.handle_send_polling_list(st.session_state.get("cell_polling_list", []))
 
 # ─── Session State Initialization ───────────────────────────────────────────
 if "ui_cfg" not in st.session_state:
@@ -759,13 +794,14 @@ with tab_cellular:
                         st.button("🛑 Disconnect", width="stretch", type="secondary", on_click=cellular_mqtt.handle_com_disconnect, key="cell_disconnect_new")
                 
                 st.button(
-                    "🚀 Sync & Provision",
-                    width="stretch", type="primary",
+                    "🔄 Read All",
+                    width="stretch", type="secondary",
                     disabled=not cell_connected or st.session_state.get("cell_provisioning", False),
-                    on_click=lambda: [save_current_mqtt_config(), cellular_mqtt.handle_provision()],
+                    on_click=sync_all_callback,
                     key="cell_provision_new",
-                    help="Apply config to DTU"
+                    help="Read all current settings from DTU hardware without overwriting"
                 )
+                
 
             # LTE & Network Check
             with st.container(border=True):
@@ -815,62 +851,104 @@ with tab_cellular:
                     prov_pwd = st.text_input("DTU Pwd", value=st.session_state.mqtt_cfg.get("cellular_pwd", ""), type="password", key="prov_pwd_new", label_visibility="collapsed", placeholder="Optional")
                 
                 st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
-                sa1, sa2 = st.columns(2)
-                with sa1:
-                    st.button("📤 Apply Mode & Config", width="stretch", type="primary", disabled=not cell_connected, on_click=cellular_mqtt.handle_apply_work_mode)
-                with sa2:
-                    st.button("🔄 Sync HW State", width="stretch", type="secondary", disabled=not cell_connected, on_click=cellular_mqtt.handle_sync_hw_state, help="Query current mode and subscriptions from DTU")
+                st.button("📤 Apply Mode & Config", width="stretch", type="primary", disabled=not cell_connected, on_click=cellular_mqtt.handle_apply_work_mode)
 
             # SUBSCRIPTION MANAGEMENT
             with st.container(border=True):
-                st.markdown('<p class="metric-label" style="margin:0 0 12px 0">SUBSCRIPTION MANAGEMENT (MAX 4 SLOTS)</p>', unsafe_allow_html=True)
+                st.markdown('<p class="metric-label" style="margin:0 0 12px 0">topic subscription</p>', unsafe_allow_html=True)
                 
                 subs_ui = st.session_state.get("cell_subs_ui", [{"topic": "", "qos": 0} for _ in range(4)])
-                # Ensure individual widget keys are initialized in session state
-                for i, sub in enumerate(subs_ui):
-                    if f"cell_sub_t_{i}" not in st.session_state:
-                        st.session_state[f"cell_sub_t_{i}"] = sub["topic"]
-                    if f"cell_sub_q_{i}" not in st.session_state:
-                        st.session_state[f"cell_sub_q_{i}"] = sub["qos"]
-                
-                # Header
-                h1, h2, h3, h4 = st.columns([0.45, 0.15, 0.2, 0.2])
-                with h1: st.markdown('<p class="metric-label" style="margin:0">TOPIC</p>', unsafe_allow_html=True)
-                with h2: st.markdown('<p class="metric-label" style="margin:0">QOS</p>', unsafe_allow_html=True)
-                with h3: st.markdown('<p class="metric-label" style="margin:0">&nbsp;</p>', unsafe_allow_html=True)
-                with h4: st.markdown('<p class="metric-label" style="margin:0">&nbsp;</p>', unsafe_allow_html=True)
 
+                # Simulated Table Layout for Subscriptions
+                # Inject CSS to narrow vertical gaps between rows
+                st.markdown("""
+                    <style>
+                    div[data-testid="column"] { gap: 0.5rem; }
+                    div.stTextInput > div > div > input { padding-top: 2px !important; padding-bottom: 2px !important; height: 32px !important; }
+                    div.stSelectbox > div > div > div { padding-top: 0px !important; padding-bottom: 0px !important; min-height: 32px !important; height: 32px !important; }
+                    div.stSelectbox div[data-testid="stMarkdownContainer"] p { font-size: 0.9rem !important; }
+                    </style>
+                """, unsafe_allow_html=True)
+
+                # Header Row
+                h1, h2, h3 = st.columns([0.15, 0.65, 0.2])
+                with h1: st.markdown('<p class="metric-label" style="margin:0; text-align:center;">ACTIVE</p>', unsafe_allow_html=True)
+                with h2: st.markdown('<p class="metric-label" style="margin:0">TOPIC</p>', unsafe_allow_html=True)
+                with h3: st.markdown('<p class="metric-label" style="margin:0">QOS</p>', unsafe_allow_html=True)
+
+                # Rows
                 for i in range(4):
-                    sub = subs_ui[i]
-                    r1, r2, r3, r4 = st.columns([0.45, 0.15, 0.2, 0.2])
-                    with r1:
-                        # Use a unique key; do not provide 'value' when using Session State API
-                        topic_val = st.text_input(f"T{i}", key=f"cell_sub_t_{i}", label_visibility="collapsed")
-                    with r2:
-                        # Use a unique key; do not provide 'index' when using Session State API
-                        qos_val = st.selectbox(f"Q{i}", [0, 1, 2], key=f"cell_sub_q_{i}", label_visibility="collapsed")
-                    with r3:
-                        st.button("➕ Sub", key=f"btn_sub_{i}", width="stretch", disabled=not cell_connected, 
-                                  on_click=cellular_mqtt.handle_dtu_update_sub, args=(i+1, topic_val, qos_val))
-                    with r4:
-                        st.button("➖ Unsub", key=f"btn_unsub_{i}", width="stretch", disabled=not cell_connected,
-                                  on_click=cellular_mqtt.handle_dtu_unsubscribe, args=(i+1,))
-                
-                st.markdown('<div style="margin-top:12px;"></div>', unsafe_allow_html=True)
-                st.button("🔄 Reload Subscriptions", width="stretch", type="secondary", 
-                          disabled=not cell_connected, on_click=cellular_mqtt.handle_sync_hw_state,
-                          help="Re-read all subscription slots from DTU hardware")
+                    # Initialize session state keys if not already set
+                    if f"cell_sub_en_{i}" not in st.session_state:
+                        st.session_state[f"cell_sub_en_{i}"] = subs_ui[i].get("en", False)
+                    if f"cell_sub_t_{i}" not in st.session_state:
+                        st.session_state[f"cell_sub_t_{i}"] = subs_ui[i]["topic"]
+                    if f"cell_sub_q_{i}" not in st.session_state:
+                        st.session_state[f"cell_sub_q_{i}"] = subs_ui[i]["qos"]
 
-            # PUBLISH MESSAGE
+                    r1, r2, r3 = st.columns([0.15, 0.65, 0.2])
+                    with r1:
+                        # Center the checkbox
+                        c_wrap = st.container()
+                        with c_wrap:
+                            st.checkbox(f"S{i}", key=f"cell_sub_en_{i}", label_visibility="collapsed")
+                    with r2:
+                        st.text_input(f"T{i}", key=f"cell_sub_t_{i}", label_visibility="collapsed")
+                    with r3:
+                        st.selectbox(f"Q{i}", [0, 1, 2], key=f"cell_sub_q_{i}", label_visibility="collapsed")
+
+                st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
+                s_c1, s_c2 = st.columns(2)
+                with s_c1:
+                    st.button("🔄 Reload", key="btn_sub_reload", width="stretch", type="secondary", 
+                              disabled=not cell_connected, on_click=cellular_mqtt.handle_sync_subs_only,
+                              help="Re-read all subscription slots from DTU hardware")
+                with s_c2:
+                    st.button("📤 Apply", key="btn_sub_apply", width="stretch", type="primary", 
+                              disabled=not cell_connected, on_click=apply_subs_callback)
+
+            # topic publishing
             with st.container(border=True):
-                st.markdown('<p class="metric-label" style="margin:0 0 12px 0">PUBLISH MESSAGE</p>', unsafe_allow_html=True)
-                pt, pq = st.columns([0.8, 0.2])
-                with pt:
-                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">TOPIC (Provisioned)</p>', unsafe_allow_html=True)
-                    prov_pub = st.text_input("DTU Pub", value=st.session_state.mqtt_cfg.get("cellular_pub_topic", "nanopd/dtu/tx"), key="prov_pub_new", label_visibility="collapsed")
-                with pq:
-                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">QOS</p>', unsafe_allow_html=True)
-                    st.selectbox("Pub QoS", [0, 1, 2], key="prov_pub_qos_new", label_visibility="collapsed", index=st.session_state.mqtt_cfg.get("cellular_pub_qos", 0))
+                st.markdown('<p class="metric-label" style="margin:0 0 12px 0">topic publishing</p>', unsafe_allow_html=True)
+                
+                # Header Row
+                hp1, hp2, hp3, hp4 = st.columns([0.15, 0.5, 0.15, 0.2])
+                with hp1: st.markdown('<p class="metric-label" style="margin:0; text-align:center;">ACTIVE</p>', unsafe_allow_html=True)
+                with hp2: st.markdown('<p class="metric-label" style="margin:0">TOPIC</p>', unsafe_allow_html=True)
+                with hp3: st.markdown('<p class="metric-label" style="margin:0">QOS</p>', unsafe_allow_html=True)
+                with hp4: st.markdown('<p class="metric-label" style="margin:0">RETAIN</p>', unsafe_allow_html=True)
+
+                # Rows
+                pubs_ui = st.session_state.get("cell_pubs_ui", [{"topic": "", "qos": 0, "retain": False} for _ in range(4)])
+                for i in range(4):
+                    if f"cell_pub_en_{i}" not in st.session_state:
+                        st.session_state[f"cell_pub_en_{i}"] = pubs_ui[i].get("en", False)
+                    if f"cell_pub_t_{i}" not in st.session_state:
+                        st.session_state[f"cell_pub_t_{i}"] = pubs_ui[i]["topic"]
+                    if f"cell_pub_q_{i}" not in st.session_state:
+                        st.session_state[f"cell_pub_q_{i}"] = pubs_ui[i]["qos"]
+                    if f"cell_pub_r_{i}" not in st.session_state:
+                        st.session_state[f"cell_pub_r_{i}"] = pubs_ui[i]["retain"]
+
+                    r1, r2, r3, r4 = st.columns([0.15, 0.5, 0.15, 0.2])
+                    with r1:
+                        st.checkbox(f"P{i}", key=f"cell_pub_en_{i}", label_visibility="collapsed")
+                    with r2:
+                        st.text_input(f"PT{i}", key=f"cell_pub_t_{i}", label_visibility="collapsed")
+                    with r3:
+                        st.selectbox(f"PQ{i}", [0, 1, 2], key=f"cell_pub_q_{i}", label_visibility="collapsed")
+                    with r4:
+                        st.checkbox(f"PR{i}", key=f"cell_pub_r_{i}", label_visibility="collapsed")
+
+                st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
+                pb_c1, pb_c2 = st.columns(2)
+                with pb_c1:
+                    st.button("🔄 Reload", key="btn_pub_reload", width="stretch", type="secondary", 
+                              disabled=not cell_connected, on_click=cellular_mqtt.handle_sync_pubs_only,
+                              help="Re-read all publish slots from DTU hardware")
+                with pb_c2:
+                    st.button("📤 Apply", key="btn_pub_apply", width="stretch", type="primary", 
+                              disabled=not cell_connected, on_click=apply_pubs_callback)
 
             # MODBUS RTU PANEL (New Container)
             with st.container(border=True):
@@ -971,7 +1049,6 @@ with tab_cellular:
 
                 st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
 
-                import pandas as pd
                 polling_list = st.session_state.get("cell_polling_list")
                 if polling_list is None:
                     polling_list = []
@@ -989,11 +1066,16 @@ with tab_cellular:
                 
                 pc1, pc2 = st.columns(2)
                 with pc1:
-                    st.button("📥 Check Polling List", width="stretch", disabled=not cell_connected, on_click=cellular_mqtt.handle_check_polling_list)
+                    st.button("🔄 Reload", key="btn_poll_reload", width="stretch", type="secondary", disabled=not cell_connected, on_click=cellular_mqtt.handle_check_polling_list)
                 with pc2:
-                    if st.button("📤 Send Polling List", width="stretch", disabled=not cell_connected):
-                        cellular_mqtt.handle_send_polling_list(st.session_state.get("cell_polling_list", []))
-                        st.rerun()
+                    st.button(
+                        "📤 Apply", 
+                        key="btn_poll_apply",
+                        width="stretch", 
+                        type="primary",
+                        disabled=not cell_connected,
+                        on_click=send_polling_callback
+                    )
 
 
     with cr:
