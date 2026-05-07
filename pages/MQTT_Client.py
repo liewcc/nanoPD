@@ -50,10 +50,9 @@ def save_current_mqtt_config():
         "cell_modbus_addr_hex": get_val("cell_modbus_addr_hex", "cell_modbus_addr_hex", "0x0000"),
         "cell_modbus_addr_dec": get_val("cell_modbus_addr_dec", "cell_modbus_addr_dec", "0"),
         "cell_modbus_qty": get_val("cell_modbus_qty", "cell_modbus_qty", 1),
-        "cell_enable_identifier": get_val("cell_enable_identifier", "cell_enable_identifier", True),
-        "cell_identifier_format": get_val("cell_identifier_format", "cell_identifier_format", "<%d>"),
         "cell_task_mode": get_val("cell_task_mode", "cell_task_mode", "TRANS"),
         "cell_work_mode": get_val("cell_work_mode", "cell_work_mode", "MQTT"),
+        # Note: Distribution/LWT/CleanSession/KeepAlive are session-only; loaded from DTU via Reload
         "mqtt_subscriptions": dict(st.session_state.get("mqtt_subscriptions", st.session_state.mqtt_cfg.get("mqtt_subscriptions", {})))
     }
     st.session_state.mqtt_cfg = cfg
@@ -159,10 +158,6 @@ if 'inet_log_format' not in st.session_state:
     st.session_state.inet_log_format = st.session_state.mqtt_cfg.get("inet_log_format", "Auto")
 if 'cell_log_format' not in st.session_state:
     st.session_state.cell_log_format = st.session_state.mqtt_cfg.get("cell_log_format", "Auto")
-if 'cell_enable_identifier' not in st.session_state:
-    st.session_state.cell_enable_identifier = st.session_state.mqtt_cfg.get("cell_enable_identifier", True)
-if 'cell_identifier_format' not in st.session_state:
-    st.session_state.cell_identifier_format = st.session_state.mqtt_cfg.get("cell_identifier_format", "<%d>")
 if 'cell_hrt_tm' in st.session_state: del st.session_state.cell_hrt_tm
 if 'cell_hrt_dt' in st.session_state: del st.session_state.cell_hrt_dt
 if 'cell_hrt_en' in st.session_state: del st.session_state.cell_hrt_en
@@ -170,6 +165,28 @@ if 'cell_task_mode' not in st.session_state:
     st.session_state.cell_task_mode = st.session_state.mqtt_cfg.get("cell_task_mode", "TRANS")
 if 'cell_work_mode' not in st.session_state:
     st.session_state.cell_work_mode = st.session_state.mqtt_cfg.get("cell_work_mode", "MQTT")
+# ── Session-only params with backing keys (survive page switches) ──
+# Streamlit removes widget-bound keys when navigating away from a page.
+# We use _bk_ prefixed keys as non-widget persistent storage.
+_PUB_EXTRA_KEYS = {
+    "cell_enable_identifier": False,
+    "cell_identifier_format": "",
+    "cell_will_topic_en": False,
+    "cell_will_msg_en": False,
+    "cell_will_topic": "",
+    "cell_will_msg": "",
+    "cell_will_qos": 0,
+    "cell_will_retain": False,
+    "cell_clean_session": True,
+    "cell_keep_alive": 60,
+}
+for _k, _default in _PUB_EXTRA_KEYS.items():
+    _bk = f"_bk_{_k}"
+    if _bk in st.session_state:
+        # Restore from backing key (page was visited before)
+        st.session_state[_k] = st.session_state[_bk]
+    elif _k not in st.session_state:
+        st.session_state[_k] = _default
 
 if 'known_at_patterns' not in st.session_state:
     known_patterns = {"+++", "atk", "ATK", "OK", "ERROR", "AT"}
@@ -940,6 +957,61 @@ with tab_cellular:
                     with r4:
                         st.checkbox(f"PR{i}", key=f"cell_pub_r_{i}", label_visibility="collapsed")
 
+                # ── Distribution (TASKDIST) ──
+                st.markdown('<hr style="margin:12px 0 8px 0; border:none; border-top:1px solid rgba(255,255,255,0.1);">', unsafe_allow_html=True)
+                dist_c1, dist_c2 = st.columns([0.5, 0.5])
+                with dist_c1:
+                    st.checkbox("Enable Identifier", key="cell_enable_identifier", help="AT+TASKDIST: Prepend identifier key to published data")
+                with dist_c2:
+                    st.text_input("Identifier Format", key="cell_identifier_format", label_visibility="collapsed", help="Identifier format string, e.g. <%d>")
+
+                # ── Will / LWT Message ──
+                with st.container(border=True):
+                    st.markdown('<p class="metric-label" style="margin:0 0 12px 0">📜 LAST WILL AND TESTAMENT</p>', unsafe_allow_html=True)
+                    will_h1, will_h2, will_h3, will_h4, will_h5 = st.columns([0.12, 0.15, 0.38, 0.15, 0.2])
+                    with will_h1: st.markdown('<p class="metric-label" style="margin:0; text-align:center;">ENABLE</p>', unsafe_allow_html=True)
+                    with will_h2: st.markdown('<p class="metric-label" style="margin:0">TYPE</p>', unsafe_allow_html=True)
+                    with will_h3: st.markdown('<p class="metric-label" style="margin:0">CONTENT</p>', unsafe_allow_html=True)
+                    with will_h4: st.markdown('<p class="metric-label" style="margin:0">QOS</p>', unsafe_allow_html=True)
+                    with will_h5: st.markdown('<p class="metric-label" style="margin:0">RETAIN</p>', unsafe_allow_html=True)
+                    # Will Topic row
+                    wt1, wt2, wt3, wt4, wt5 = st.columns([0.12, 0.15, 0.38, 0.15, 0.2])
+                    with wt1:
+                        st.checkbox("WT", key="cell_will_topic_en", label_visibility="collapsed", help="Enable Will Topic")
+                    with wt2:
+                        st.markdown('<p class="metric-label" style="margin-top:6px; margin-bottom:0;">Topic</p>', unsafe_allow_html=True)
+                    with wt3:
+                        st.text_input("Will Topic", key="cell_will_topic", label_visibility="collapsed", placeholder="e.g. device/status")
+                    with wt4:
+                        st.selectbox("Will QoS", [0, 1, 2], key="cell_will_qos", label_visibility="collapsed")
+                    with wt5:
+                        st.checkbox("Will Retain", key="cell_will_retain", label_visibility="collapsed")
+                    # Will Message row
+                    wm1, wm2, wm3 = st.columns([0.12, 0.15, 0.73])
+                    with wm1:
+                        pass # Empty space to align with the checkbox above
+                    with wm2:
+                        st.markdown('<p class="metric-label" style="margin-top:6px; margin-bottom:0;">Message</p>', unsafe_allow_html=True)
+                    with wm3:
+                        st.text_input("Will Message", key="cell_will_msg", label_visibility="collapsed", placeholder="e.g. offline")
+
+                # ── Clean Session & Keep Alive ──
+                st.markdown('<hr style="margin:12px 0 8px 0; border:none; border-top:1px solid rgba(255,255,255,0.1);">', unsafe_allow_html=True)
+                cs_col, ka_col = st.columns(2)
+                with cs_col:
+                    st.checkbox("🔄 Clean Session", key="cell_clean_session", help="Clean Session = 1: broker discards previous session on connect")
+                with ka_col:
+                    k1, k2 = st.columns([0.5, 0.5])
+                    with k1:
+                        st.markdown('<p class="metric-label" style="margin-top:6px; margin-bottom:0;">⏱ KEEP ALIVE (s)</p>', unsafe_allow_html=True)
+                    with k2:
+                        st.number_input("Keep Alive", min_value=0, max_value=65535, key="cell_keep_alive", label_visibility="collapsed", help="MQTT Keep Alive interval in seconds (default: 60)")
+
+                # Save widget values to backing keys (survive page switches)
+                for _k in _PUB_EXTRA_KEYS:
+                    if _k in st.session_state:
+                        st.session_state[f"_bk_{_k}"] = st.session_state[_k]
+
                 st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
                 pb_c1, pb_c2 = st.columns(2)
                 with pb_c1:
@@ -1040,14 +1112,6 @@ with tab_cellular:
                 with tt_c2:
                     st.markdown('<p class="metric-label" style="margin:4px 0 0 0">INTERVAL (ms)</p>', unsafe_allow_html=True)
                     st.number_input("Interval", min_value=10, max_value=5000, value=None, key="cell_task_interval", label_visibility="collapsed", help="Delay between each command")
-
-                id1, id2 = st.columns([0.6, 0.4])
-                with id1:
-                    st.checkbox("Enable Identifier (Append Key Name to data)", key="cell_enable_identifier", help="Enables AT+TASKDIST=\"1\" to prepend the Key Name to reported data")
-                with id2:
-                    st.text_input("Format", key="cell_identifier_format", label_visibility="collapsed", help="Identifier format, e.g. <%d>")
-
-                st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
 
                 polling_list = st.session_state.get("cell_polling_list")
                 if polling_list is None:

@@ -510,18 +510,85 @@ def _read_hw_state_in_at_mode(ser):
                 except ValueError:
                     pass
 
-    # 0.5. Read TASKDIST
-    resp_dist = _send_and_wait(ser, b'AT+TASKDIST\r\n', 1.0)
+    # 0.5. Read MQTTDIST (Distribution / Identifier)
+    resp_dist = _send_and_wait(ser, b'AT+MQTTDIST\r\n', 1.0)
     dist_text = resp_dist.decode('utf-8', errors='replace')
     for line in dist_text.splitlines():
         line = line.strip()
-        if line.upper().startswith('+TASKDIST:'):
+        if line.upper().startswith('+MQTTDIST:'):
+            val = line.split(":", 1)[1].strip()
+            d_parts = []
+            current = ""
+            in_quotes = False
+            for ch in val:
+                if ch == '"':
+                    in_quotes = not in_quotes
+                elif ch == ',' and not in_quotes:
+                    d_parts.append(current.strip().strip('"'))
+                    current = ""
+                    continue
+                current += ch
+            d_parts.append(current.strip().strip('"'))
+            if len(d_parts) >= 2:
+                try:
+                    st.session_state.cell_enable_identifier = (d_parts[0] == "1")
+                    st.session_state.cell_identifier_format = d_parts[1]
+                    st.session_state._bk_cell_enable_identifier = st.session_state.cell_enable_identifier
+                    st.session_state._bk_cell_identifier_format = st.session_state.cell_identifier_format
+                except:
+                    pass
+
+    # 0.6. Read MQTTWILL (Last Will and Testament)
+    resp_will = _send_and_wait(ser, b'AT+MQTTWILL\r\n', 1.0)
+    will_text = resp_will.decode('utf-8', errors='replace')
+    for line in will_text.splitlines():
+        line = line.strip()
+        if line.upper().startswith('+MQTTWILL:'):
+            val = line.split(":", 1)[1].strip()
+            w_parts = []
+            current = ""
+            in_quotes = False
+            for ch in val:
+                if ch == '"':
+                    in_quotes = not in_quotes
+                elif ch == ',' and not in_quotes:
+                    w_parts.append(current.strip().strip('"'))
+                    current = ""
+                    continue
+                current += ch
+            w_parts.append(current.strip().strip('"'))
+            if len(w_parts) >= 5:
+                try:
+                    will_en = (w_parts[0] == "1")
+                    st.session_state.cell_will_topic_en = will_en
+                    st.session_state.cell_will_msg_en = will_en
+                    st.session_state.cell_will_topic = w_parts[1]
+                    st.session_state.cell_will_msg = w_parts[2]
+                    st.session_state.cell_will_qos = int(w_parts[3])
+                    st.session_state.cell_will_retain = (w_parts[4] == "1")
+                    st.session_state._bk_cell_will_topic_en = st.session_state.cell_will_topic_en
+                    st.session_state._bk_cell_will_msg_en = st.session_state.cell_will_msg_en
+                    st.session_state._bk_cell_will_topic = st.session_state.cell_will_topic
+                    st.session_state._bk_cell_will_msg = st.session_state.cell_will_msg
+                    st.session_state._bk_cell_will_qos = st.session_state.cell_will_qos
+                    st.session_state._bk_cell_will_retain = st.session_state.cell_will_retain
+                except:
+                    pass
+
+    # 0.7. Read MQTTCON (Clean Session & Keep Alive)
+    resp_con = _send_and_wait(ser, b'AT+MQTTCON\r\n', 1.0)
+    con_text = resp_con.decode('utf-8', errors='replace')
+    for line in con_text.splitlines():
+        line = line.strip()
+        if line.upper().startswith('+MQTTCON:'):
             val = line.split(":", 1)[1].strip()
             parts = val.split(',')
             if len(parts) >= 2:
                 try:
-                    st.session_state.cell_enable_identifier = (parts[0].replace('"', '').strip() == "1")
-                    st.session_state.cell_identifier_format = parts[1].replace('"', '').strip()
+                    st.session_state.cell_clean_session = (parts[0].replace('"', '').strip() == "1")
+                    st.session_state.cell_keep_alive = int(parts[1].replace('"', '').strip())
+                    st.session_state._bk_cell_clean_session = st.session_state.cell_clean_session
+                    st.session_state._bk_cell_keep_alive = st.session_state.cell_keep_alive
                 except:
                     pass
 
@@ -702,7 +769,7 @@ def _read_subs_only_in_at_mode(ser):
         st.session_state[f"cell_sub_q_{i}"] = subs[i]["qos"]
 
 def _read_pubs_only_in_at_mode(ser):
-    """Internal helper to ONLY query MQTT publishing slots."""
+    """Internal helper to query MQTT publishing slots, distribution, will, and connection params."""
     pubs = []
     for i in range(1, 5):
         resp = _send_and_wait(ser, f'AT+MQTTPUB{i}\r\n'.encode('utf-8'), 1.0)
@@ -727,6 +794,95 @@ def _read_pubs_only_in_at_mode(ser):
         st.session_state[f"cell_pub_t_{i}"] = pubs[i]["topic"]
         st.session_state[f"cell_pub_q_{i}"] = pubs[i]["qos"]
         st.session_state[f"cell_pub_r_{i}"] = pubs[i]["retain"]
+
+    # ── Read MQTTDIST (Distribution / Identifier) ──
+    resp_dist = _send_and_wait(ser, b'AT+MQTTDIST\r\n', 1.0)
+    dist_text = resp_dist.decode('utf-8', errors='replace')
+    for line in dist_text.splitlines():
+        line = line.strip()
+        if line.upper().startswith('+MQTTDIST:'):
+            val = line.split(":", 1)[1].strip()
+            # Quote-aware parsing: format string may contain commas, e.g. "<%d>,<%t>"
+            d_parts = []
+            current = ""
+            in_quotes = False
+            for ch in val:
+                if ch == '"':
+                    in_quotes = not in_quotes
+                elif ch == ',' and not in_quotes:
+                    d_parts.append(current.strip().strip('"'))
+                    current = ""
+                    continue
+                current += ch
+            d_parts.append(current.strip().strip('"'))
+            if len(d_parts) >= 2:
+                try:
+                    st.session_state.cell_enable_identifier = (d_parts[0] == "1")
+                    st.session_state.cell_identifier_format = d_parts[1]
+                    st.session_state._bk_cell_enable_identifier = st.session_state.cell_enable_identifier
+                    st.session_state._bk_cell_identifier_format = st.session_state.cell_identifier_format
+                except:
+                    pass
+
+    # ── Read MQTTWILL (Last Will and Testament) ──
+    # Response format: +MQTTWILL:"enable","topic","message","qos","retain"
+    resp_will = _send_and_wait(ser, b'AT+MQTTWILL\r\n', 1.0)
+    will_text = resp_will.decode('utf-8', errors='replace')
+    for line in will_text.splitlines():
+        line = line.strip()
+        if line.upper().startswith('+MQTTWILL:'):
+            val = line.split(":", 1)[1].strip()
+            # Use quote-aware parsing for topic/message that may contain commas
+            w_parts = []
+            current = ""
+            in_quotes = False
+            for ch in val:
+                if ch == '"':
+                    in_quotes = not in_quotes
+                elif ch == ',' and not in_quotes:
+                    w_parts.append(current.strip().strip('"'))
+                    current = ""
+                    continue
+                current += ch
+            w_parts.append(current.strip().strip('"'))
+            if len(w_parts) >= 5:
+                try:
+                    will_en = (w_parts[0] == "1")
+                    st.session_state.cell_will_topic_en = will_en
+                    st.session_state.cell_will_msg_en = will_en
+                    st.session_state.cell_will_topic = w_parts[1]
+                    st.session_state.cell_will_msg = w_parts[2]
+                    st.session_state.cell_will_qos = int(w_parts[3])
+                    st.session_state.cell_will_retain = (w_parts[4] == "1")
+                    # Update backing keys so page init doesn't overwrite
+                    st.session_state._bk_cell_will_topic_en = st.session_state.cell_will_topic_en
+                    st.session_state._bk_cell_will_msg_en = st.session_state.cell_will_msg_en
+                    st.session_state._bk_cell_will_topic = st.session_state.cell_will_topic
+                    st.session_state._bk_cell_will_msg = st.session_state.cell_will_msg
+                    st.session_state._bk_cell_will_qos = st.session_state.cell_will_qos
+                    st.session_state._bk_cell_will_retain = st.session_state.cell_will_retain
+                except:
+                    pass
+
+    # ── Read MQTTCON (Clean Session & Keep Alive) ──
+    # Response format: +MQTTCON:"clean_session","keepalive_seconds"
+    resp_con = _send_and_wait(ser, b'AT+MQTTCON\r\n', 1.0)
+    con_text = resp_con.decode('utf-8', errors='replace')
+    for line in con_text.splitlines():
+        line = line.strip()
+        if line.upper().startswith('+MQTTCON:'):
+            val = line.split(":", 1)[1].strip()
+            parts = val.split(',')
+            if len(parts) >= 2:
+                try:
+                    st.session_state.cell_clean_session = (parts[0].replace('"', '').strip() == "1")
+                    st.session_state.cell_keep_alive = int(parts[1].replace('"', '').strip())
+                    # Update backing keys so page init doesn't overwrite
+                    st.session_state._bk_cell_clean_session = st.session_state.cell_clean_session
+                    st.session_state._bk_cell_keep_alive = st.session_state.cell_keep_alive
+                except:
+                    pass
+
 
 # ─── Hardware State Sync ──────────────────────────────────────────────────────
 def handle_sync_hw_state():
@@ -1011,7 +1167,7 @@ def handle_apply_subscriptions(subs_list):
         st.toast("Failed to enter AT mode", icon="❌")
 
 def handle_apply_publishing(pubs_list):
-    """Send all publishing presets to DTU."""
+    """Send all publishing presets, distribution, will, and connection params to DTU."""
     ser = st.session_state.cell_serial
     if not ser or not ser.is_open:
         st.toast("COM not connected.", icon="⚠️")
@@ -1019,6 +1175,7 @@ def handle_apply_publishing(pubs_list):
         
     st.toast("Applying publishing config...", icon="⏳")
     if _enter_at_mode(ser):
+        # 1. Publish slots
         for i, item in enumerate(pubs_list):
             slot = i + 1
             en = "1" if item.get("Active", False) else "0"
@@ -1030,9 +1187,35 @@ def handle_apply_publishing(pubs_list):
             cmd = f'AT+MQTTPUB{slot}="{en}","{topic}","{qos}","{retain}"\r\n'
             _send_and_wait(ser, cmd.encode('utf-8'), 1.5)
             time.sleep(0.2)
-            
+
+        # 2. Distribution (MQTTDIST)
+        dist_en = "1" if st.session_state.get("cell_enable_identifier", True) else "0"
+        dist_fmt = st.session_state.get("cell_identifier_format", "<%d>")
+        dist_cmd = f'AT+MQTTDIST="{dist_en}","{dist_fmt}"\r\n'
+        _send_and_wait(ser, dist_cmd.encode('utf-8'), 1.0)
+        time.sleep(0.2)
+
+        # 3. Will Message (MQTTWILL)
+        will_topic_en = st.session_state.get("cell_will_topic_en", False)
+        will_en = "1" if will_topic_en else "0"
+        will_topic = st.session_state.get("cell_will_topic", "")
+        will_msg = st.session_state.get("cell_will_msg", "")
+        will_qos = st.session_state.get("cell_will_qos", 0)
+        will_retain = "1" if st.session_state.get("cell_will_retain", False) else "0"
+        will_cmd = f'AT+MQTTWILL="{will_en}","{will_topic}","{will_msg}","{will_qos}","{will_retain}"\r\n'
+        _send_and_wait(ser, will_cmd.encode('utf-8'), 1.5)
+        time.sleep(0.2)
+
+        # 4. Clean Session & Keep Alive (MQTTCON)
+        clean_sess = "1" if st.session_state.get("cell_clean_session", True) else "0"
+        keep_alive = st.session_state.get("cell_keep_alive", 60)
+        con_cmd = f'AT+MQTTCON="{clean_sess}","{keep_alive}"\r\n'
+        _send_and_wait(ser, con_cmd.encode('utf-8'), 1.0)
+        time.sleep(0.2)
+
         _send_and_wait(ser, b'ATO\r\n', 1.0)
         st.toast("Publishing config updated!", icon="✅")
     else:
         st.toast("Failed to enter AT mode", icon="❌")
+
 
