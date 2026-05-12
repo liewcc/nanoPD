@@ -137,7 +137,7 @@ def add_column_dialog(current_file, data, df_cols, was_dict):
     
     _, btn_col, _ = st.columns([1, 2, 1])
     with btn_col:
-        confirm = st.button("Confirm", type="primary", use_container_width=True)
+        confirm = st.button("Confirm", type="primary", width="stretch")
     
     if confirm:
         if col_name and col_name not in df_cols:
@@ -170,7 +170,7 @@ def edit_column_dialog(current_file, data, df_cols, was_dict):
     new_edit_name = st.text_input("New Name")
     _, btn_col, _ = st.columns([1, 2, 1])
     with btn_col:
-        confirm = st.button("Confirm", type="primary", use_container_width=True)
+        confirm = st.button("Confirm", type="primary", width="stretch")
         
     if confirm:
         if edit_col_name and new_edit_name and new_edit_name not in df_cols:
@@ -195,7 +195,7 @@ def delete_column_dialog(current_file, data, df_cols, was_dict):
     del_col_name = st.selectbox("Select Column to Delete", options=df_cols)
     _, btn_col, _ = st.columns([1, 2, 1])
     with btn_col:
-        confirm = st.button("Confirm", type="primary", use_container_width=True)
+        confirm = st.button("Confirm", type="primary", width="stretch")
         
     if confirm:
         if del_col_name:
@@ -215,9 +215,9 @@ with tab1:
         
         col1, col2 = st.columns(2)
         with col1:
-            st.button("📂 Open", use_container_width=True, on_click=open_json_file)
+            st.button("📂 Open", width="stretch", on_click=open_json_file)
         with col2:
-            st.button("📄 New", use_container_width=True, on_click=new_json_file)
+            st.button("📄 New", width="stretch", on_click=new_json_file)
 
     if st.session_state.get("json_current_file"):
         current_file = st.session_state["json_current_file"]
@@ -239,13 +239,13 @@ with tab1:
             )
             col_m1, col_m2, col_m3 = st.columns(3)
             with col_m1:
-                if st.button("➕ Add", use_container_width=True):
+                if st.button("➕ Add", width="stretch"):
                     add_column_dialog(current_file, data, list(df.columns) if not df.empty else [], was_dict)
             with col_m2:
-                if st.button("✏️ Edit", use_container_width=True):
+                if st.button("✏️ Edit", width="stretch"):
                     edit_column_dialog(current_file, data, list(df.columns) if not df.empty else [], was_dict)
             with col_m3:
-                if st.button("🗑️ Delete", use_container_width=True):
+                if st.button("🗑️ Delete", width="stretch"):
                     delete_column_dialog(current_file, data, list(df.columns) if not df.empty else [], was_dict)
 
         with st.container(border=True):
@@ -256,9 +256,9 @@ with tab1:
             save_btn_placeholder = top_col2.empty()
             
             # Fixed height limits scrolling to the container instead of the page
-            edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True, height=380, key=f"data_editor_{current_file}")
+            edited_df = st.data_editor(df, num_rows="dynamic", width="stretch", height=380, key=f"data_editor_{current_file}")
             
-            if save_btn_placeholder.button("💾 Save Changes", type="primary", use_container_width=True):
+            if save_btn_placeholder.button("💾 Save Changes", type="primary", width="stretch"):
                 new_data = edited_df.to_dict('records')
                 save_json(current_file, new_data, was_dict)
                 st.rerun()
