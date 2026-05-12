@@ -89,8 +89,34 @@ def apply_pubs_callback():
     cellular_mqtt.handle_apply_publishing(new_pubs)
 
 def send_polling_callback():
-    # Use the polling list from session state (updated by data_editor)
+    # cell_polling_list is kept in sync by the data_editor on_change callback
     cellular_mqtt.handle_send_polling_list(st.session_state.get("cell_polling_list", []))
+
+def polling_editor_on_change():
+    """Called by data_editor when the user commits an edit.
+    Reconstructs the full polling list from the base snapshot + editor diff,
+    then persists it to cell_polling_list so Apply always has fresh data."""
+    polling_list = st.session_state.get("_polling_base_df", [])
+    base_df = pd.DataFrame(polling_list) if polling_list else pd.DataFrame(columns=["Index", "Command"])
+    editor_state = st.session_state.get("cell_polling_editor", {})
+    added = editor_state.get("added_rows", [])
+    edited = editor_state.get("edited_rows", {})  # {str(row_idx): {col: val}}
+    deleted = set(editor_state.get("deleted_rows", []))
+    # Apply edits
+    df = base_df.copy()
+    for idx_str, changes in edited.items():
+        idx = int(idx_str)
+        if idx < len(df):
+            for col, val in changes.items():
+                df.at[idx, col] = val
+    # Remove deleted rows
+    df = df.drop(index=[i for i in deleted if i < len(df)], errors="ignore").reset_index(drop=True)
+    # Append added rows
+    if added:
+        added_df = pd.DataFrame(added)
+        df = pd.concat([df, added_df], ignore_index=True)
+    st.session_state.cell_polling_list = df.to_dict('records')
+
 
 # ─── Session State Initialization ───────────────────────────────────────────
 if "ui_cfg" not in st.session_state:
@@ -182,11 +208,13 @@ _PUB_EXTRA_KEYS = {
 }
 for _k, _default in _PUB_EXTRA_KEYS.items():
     _bk = f"_bk_{_k}"
-    if _bk in st.session_state:
-        # Restore from backing key (page was visited before)
-        st.session_state[_k] = st.session_state[_bk]
-    elif _k not in st.session_state:
-        st.session_state[_k] = _default
+    if _k not in st.session_state:
+        # Widget key was evicted (page navigation): restore from backing key if available
+        if _bk in st.session_state:
+            st.session_state[_k] = st.session_state[_bk]
+        else:
+            st.session_state[_k] = _default
+    # If _k already exists (user is on the page and edited a widget), leave it untouched.
 
 if 'known_at_patterns' not in st.session_state:
     known_patterns = {"+++", "atk", "ATK", "OK", "ERROR", "AT"}
@@ -818,6 +846,48 @@ with tab_cellular:
                     key="cell_provision_new",
                     help="Read all current settings from DTU hardware without overwriting"
                 )
+
+            # 4G Module UART Configuration
+            with st.container(border=True):
+                st.markdown('<p class="metric-label" style="margin:0 0 12px 0">4G MODULE UART CONFIGURATION</p>', unsafe_allow_html=True)
+                
+                u_bd, u_db, u_pa, u_sb = st.columns([0.25, 0.25, 0.25, 0.25])
+                
+                baud_options = [9600, 19200, 38400, 57600, 115200]
+                db_opts = [5, 6, 7, 8]
+                pa_opts = ["None", "Even", "Odd", "Mark", "Space"]
+                sb_opts = [1, 1.5, 2]
+
+                def get_sel_kwargs(key):
+                    kwargs = {"label_visibility": "collapsed"}
+                    if st.session_state.get(key) is None:
+                        kwargs["index"] = None
+                        kwargs["placeholder"] = " "
+                    return kwargs
+
+                with u_bd:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">BAUDRATE</p>', unsafe_allow_html=True)
+                    st.selectbox("Baud", baud_options, key="cell_dtu_baud_sel", **get_sel_kwargs("cell_dtu_baud_sel"))
+                with u_db:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">DATA BITS</p>', unsafe_allow_html=True)
+                    st.selectbox("Data Bits", db_opts, key="cell_dtu_data_sel", **get_sel_kwargs("cell_dtu_data_sel"))
+                with u_pa:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">PARITY</p>', unsafe_allow_html=True)
+                    st.selectbox("Parity", pa_opts, key="cell_dtu_parity_sel", **get_sel_kwargs("cell_dtu_parity_sel"))
+                with u_sb:
+                    st.markdown('<p class="metric-label" style="margin:4px 0 0 0">STOP BITS</p>', unsafe_allow_html=True)
+                    st.selectbox("Stop Bits", sb_opts, key="cell_dtu_stop_sel", **get_sel_kwargs("cell_dtu_stop_sel"))
+
+                st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
+                uc1, uc2 = st.columns(2)
+                with uc1:
+                    st.button("🔄 Reload", key="btn_uart_reload", width="stretch", type="secondary", 
+                              disabled=not cell_connected, on_click=cellular_mqtt.handle_sync_uart_only,
+                              help="Re-read UART config from DTU hardware")
+                with uc2:
+                    st.button("📤 Apply", key="btn_uart_apply", width="stretch", type="primary", 
+                              disabled=not cell_connected, on_click=cellular_mqtt.handle_apply_uart_config)
+
                 
 
             # LTE & Network Check
@@ -956,14 +1026,6 @@ with tab_cellular:
                         st.selectbox(f"PQ{i}", [0, 1, 2], key=f"cell_pub_q_{i}", label_visibility="collapsed")
                     with r4:
                         st.checkbox(f"PR{i}", key=f"cell_pub_r_{i}", label_visibility="collapsed")
-
-                # ── Distribution (TASKDIST) ──
-                st.markdown('<hr style="margin:12px 0 8px 0; border:none; border-top:1px solid rgba(255,255,255,0.1);">', unsafe_allow_html=True)
-                dist_c1, dist_c2 = st.columns([0.5, 0.5])
-                with dist_c1:
-                    st.checkbox("Enable Identifier", key="cell_enable_identifier", help="AT+TASKDIST: Prepend identifier key to published data")
-                with dist_c2:
-                    st.text_input("Identifier Format", key="cell_identifier_format", label_visibility="collapsed", help="Identifier format string, e.g. <%d>")
 
                 # ── Will / LWT Message ──
                 with st.container(border=True):
@@ -1113,20 +1175,29 @@ with tab_cellular:
                     st.markdown('<p class="metric-label" style="margin:4px 0 0 0">INTERVAL (ms)</p>', unsafe_allow_html=True)
                     st.number_input("Interval", min_value=10, max_value=5000, value=None, key="cell_task_interval", label_visibility="collapsed", help="Delay between each command")
 
+                st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
+                dist_c1, dist_c2 = st.columns([0.5, 0.5])
+                with dist_c1:
+                    st.checkbox("Enable Identifier", key="cell_enable_identifier", help="AT+TASKDIST: Prepend identifier key to published data")
+                with dist_c2:
+                    st.text_input("Identifier Format", key="cell_identifier_format", label_visibility="collapsed", help="Identifier format string, e.g. <%d>")
+
                 polling_list = st.session_state.get("cell_polling_list")
                 if polling_list is None:
                     polling_list = []
+                # Snapshot the base so the on_change callback can reconstruct the full df
+                st.session_state["_polling_base_df"] = list(polling_list)
                 df = pd.DataFrame(polling_list)
                 if df.empty:
                     df = pd.DataFrame(columns=["Index", "Command"])
-                edited_df = st.data_editor(
+                st.data_editor(
                     df,
                     num_rows="dynamic",
                     key="cell_polling_editor",
                     width='stretch',
-                    hide_index=True
+                    hide_index=True,
+                    on_change=polling_editor_on_change
                 )
-                st.session_state.cell_polling_list = edited_df.to_dict('records')
                 
                 pc1, pc2 = st.columns(2)
                 with pc1:

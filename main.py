@@ -36,6 +36,7 @@ pages = {
         st.Page("pages/SRAM.py", title="SRAM", icon="💾"),
         st.Page("pages/BootROM.py", title="BootROM", icon="🔒"),
         st.Page("pages/OTP.py", title="OTP", icon="🔑"),
+        st.Page("pages/JSON_Editor.py", title="JSON Editor", icon="📝"),
     ],
     "Utilities": [
         st.Page("pages/RS485_Decoder.py", title="RS485 Decoder", icon="🔌"),

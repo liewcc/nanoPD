@@ -510,7 +510,7 @@ def _read_hw_state_in_at_mode(ser):
                 except ValueError:
                     pass
 
-    # 0.5. Read MQTTDIST (Distribution / Identifier)
+    # 0.5. Read MQTTDIST (Incoming Identifier)
     resp_dist = _send_and_wait(ser, b'AT+MQTTDIST\r\n', 1.0)
     dist_text = resp_dist.decode('utf-8', errors='replace')
     for line in dist_text.splitlines():
@@ -537,6 +537,32 @@ def _read_hw_state_in_at_mode(ser):
                     st.session_state._bk_cell_identifier_format = st.session_state.cell_identifier_format
                 except:
                     pass
+
+    # 0.5b. Read TASKDIST (Outgoing Identifier)
+    resp_tdist = _send_and_wait(ser, b'AT+TASKDIST\r\n', 1.0)
+    tdist_text = resp_tdist.decode('utf-8', errors='replace')
+    for line in tdist_text.splitlines():
+        line = line.strip()
+        if line.upper().startswith('+TASKDIST:'):
+            val = line.split(":", 1)[1].strip()
+            # If the UI uses the same keys for both, TASKDIST should also update them or we should separate them.
+            # For now, let's keep them synced as they share the same UI inputs.
+            d_parts = []
+            current = ""
+            in_quotes = False
+            for ch in val:
+                if ch == '"': in_quotes = not in_quotes
+                elif ch == ',' and not in_quotes:
+                    d_parts.append(current.strip().strip('"'))
+                    current = ""
+                    continue
+                current += ch
+            d_parts.append(current.strip().strip('"'))
+            if len(d_parts) >= 2:
+                st.session_state.cell_enable_identifier = (d_parts[0] == "1")
+                st.session_state.cell_identifier_format = d_parts[1]
+                st.session_state._bk_cell_enable_identifier = st.session_state.cell_enable_identifier
+                st.session_state._bk_cell_identifier_format = st.session_state.cell_identifier_format
 
     # 0.6. Read MQTTWILL (Last Will and Testament)
     resp_will = _send_and_wait(ser, b'AT+MQTTWILL\r\n', 1.0)
@@ -622,7 +648,7 @@ def _read_hw_state_in_at_mode(ser):
     if "cell_polling_editor" in st.session_state:
         del st.session_state["cell_polling_editor"]
     
-    # --- Sync Working Mode ---
+    # --- Sync Working Mode & Task Mode ---
     resp_work = _send_and_wait(ser, b'AT+WORK\r\n', 1.0)
     work_text = resp_work.decode('utf-8', errors='replace')
     for line in work_text.splitlines():
@@ -630,6 +656,14 @@ def _read_hw_state_in_at_mode(ser):
         if line.upper().startswith('+WORK:'):
             val = line.split(":", 1)[1].strip().replace('"', '')
             st.session_state.cell_work_mode = val.upper()
+    
+    resp_tmd = _send_and_wait(ser, b'AT+TASKMD\r\n', 1.0)
+    tmd_text = resp_tmd.decode('utf-8', errors='replace')
+    for line in tmd_text.splitlines():
+        line = line.strip()
+        if line.upper().startswith('+TASKMD:'):
+            val = line.split(":", 1)[1].strip().replace('"', '')
+            st.session_state.cell_task_mode = val.upper()
 
     # --- Sync LTE & Network Info ---
     net_info = {
@@ -659,6 +693,9 @@ def _read_hw_state_in_at_mode(ser):
                 except: pass
                 break
     st.session_state.cell_network_info = net_info
+
+    # --- Sync UART Info ---
+    _read_uart_config_in_at_mode(ser)
 
     st.toast(f"HW synced: {count} sub(s){pub_info}, {len(polling_list)} task(s)", icon="✅")
 
@@ -692,6 +729,15 @@ def _read_polling_config_in_at_mode(ser):
                     st.session_state.cell_enable_identifier = (parts[0].replace('"', '').strip() == "1")
                     st.session_state.cell_identifier_format = parts[1].replace('"', '').strip()
                 except: pass
+
+    # 0.6. Read TASKMD
+    resp_tmd = _send_and_wait(ser, b'AT+TASKMD\r\n', 1.0)
+    tmd_text = resp_tmd.decode('utf-8', errors='replace')
+    for line in tmd_text.splitlines():
+        line = line.strip()
+        if line.upper().startswith('+TASKMD:'):
+            val = line.split(":", 1)[1].strip().replace('"', '')
+            st.session_state.cell_task_mode = val.upper()
 
     # 1. Now call the scoped helper to handle the actual list and time reading
     _read_polling_list_only_in_at_mode(ser)
@@ -1088,14 +1134,116 @@ def handle_send_polling_list(polling_list):
         # 3. Read back to confirm POLLING ONLY
         _read_polling_config_in_at_mode(ser)
         
-        # 4. Return to transparent mode
-        _send_and_wait(ser, b'ATO\r\n', 1.0)
-        st.toast("Polling configuration applied & synced!", icon="✅")
+        # 4. Restart to apply changes
+        _send_and_wait(ser, b'AT+PWR\r\n', 1.5)
+        st.toast("Polling configuration applied! DTU is restarting...", icon="✅")
     else:
         st.toast("Failed to enter AT mode", icon="❌")
 
+def _read_uart_config_in_at_mode(ser):
+    """Internal helper: query AT+UART and update session state.
+    Response format: +UART:"baud","stop_bits","data_bits","parity"""""
+    resp = _send_and_wait(ser, b'AT+UART\r\n', 1.0)
+    text = resp.decode('utf-8', errors='replace')
+    for line in text.splitlines():
+        line = line.strip()
+        if line.upper().startswith('+UART:'):
+            val = line.split(':', 1)[1].strip()
+            # Quote-aware split
+            parts = []
+            current = ""
+            in_q = False
+            for ch in val:
+                if ch == '"':
+                    in_q = not in_q
+                elif ch == ',' and not in_q:
+                    parts.append(current.strip().strip('"'))
+                    current = ""
+                    continue
+                current += ch
+            parts.append(current.strip().strip('"'))
+            # parts: [baud, stop_bits, data_bits, parity]
+            if len(parts) >= 4:
+                try:
+                    baud_val = int(parts[0])
+                    stop_val_raw = parts[1]  # "1", "1.5", "2"
+                    try:
+                        stop_val = float(stop_val_raw)
+                        if stop_val == int(stop_val):
+                            stop_val = int(stop_val)
+                    except ValueError:
+                        stop_val = 1
+                    data_val = int(parts[2])
+                    parity_val = parts[3].capitalize()  # NONE -> None, EVEN -> Even, etc.
+                    if parity_val == "None" or parity_val == "":
+                        parity_val = "None"
+                    st.session_state.cell_dtu_baud = baud_val
+                    st.session_state.cell_dtu_stop = stop_val
+                    st.session_state.cell_dtu_data = data_val
+                    st.session_state.cell_dtu_parity = parity_val
+                    
+                    # Update widget keys directly to force UI refresh on reload
+                    st.session_state.cell_dtu_baud_sel = baud_val
+                    st.session_state.cell_dtu_stop_sel = stop_val
+                    st.session_state.cell_dtu_data_sel = data_val
+                    st.session_state.cell_dtu_parity_sel = parity_val
+                except (ValueError, IndexError):
+                    pass
+            break
+
+
+def handle_sync_uart_only():
+    """Query AT+UART from DTU and update UI state (Reload)."""
+    ser = st.session_state.cell_serial
+    if not ser or not ser.is_open:
+        st.toast("COM not connected.", icon="⚠️")
+        return
+    st.toast("Reading 4G module UART config...", icon="⏳")
+    if _enter_at_mode(ser):
+        _read_uart_config_in_at_mode(ser)
+        _send_and_wait(ser, b'ATO\r\n', 1.0)
+        st.toast("UART config reloaded!", icon="✅")
+    else:
+        st.toast("Failed to enter AT mode", icon="❌")
+
+
+def handle_apply_uart_config():
+    """Write baud rate, stop bits, data bits, parity to DTU via AT+UART."""
+    ser = st.session_state.cell_serial
+    if not ser or not ser.is_open:
+        st.toast("COM not connected.", icon="⚠️")
+        return
+
+    baud = st.session_state.get("cell_dtu_baud_sel")
+    stop = st.session_state.get("cell_dtu_stop_sel")
+    data = st.session_state.get("cell_dtu_data_sel")
+    parity = st.session_state.get("cell_dtu_parity_sel")
+
+    if None in (baud, stop, data, parity):
+        st.toast("Please read or select UART configuration first.", icon="⚠️")
+        return
+
+    # Convert stop bits float to string without trailing .0
+    stop_str = str(int(stop)) if stop == int(stop) else str(stop)
+    parity_str = parity.upper()
+
+    st.toast("Applying 4G UART config...", icon="⏳")
+    if _enter_at_mode(ser):
+        cmd = f'AT+UART="{baud}","{stop_str}","{data}","{parity_str}"\r\n'
+        _send_and_wait(ser, cmd.encode('utf-8'), 1.5)
+        time.sleep(0.3)
+        # Verify by reading back
+        _read_uart_config_in_at_mode(ser)
+        
+        # Restart to apply
+        _send_and_wait(ser, b'AT+PWR\r\n', 1.5)
+        st.toast("4G UART config applied! DTU is restarting...", icon="✅")
+    else:
+        st.toast("Failed to enter AT mode", icon="❌")
+
+
 def handle_check_network():
-    """Check LTE and network status via AT commands."""
+    """Check LTE and network status via AT commands. Also refreshes UART config."""
     ser = st.session_state.cell_serial
     if not ser or not ser.is_open:
         st.toast("COM not connected.", icon="⚠️")
@@ -1134,7 +1282,10 @@ def handle_check_network():
                     except:
                         pass
                     break
-                    
+
+        # Also refresh UART config so the new container updates
+        _read_uart_config_in_at_mode(ser)
+
         _send_and_wait(ser, b'ATO\r\n', 1.0)
         st.session_state.cell_network_info = info
         st.toast("Network info updated.", icon="✅")
@@ -1161,8 +1312,9 @@ def handle_apply_subscriptions(subs_list):
             _send_and_wait(ser, cmd.encode('utf-8'), 1.5)
             time.sleep(0.2)
             
-        _send_and_wait(ser, b'ATO\r\n', 1.0)
-        st.toast("Subscriptions updated!", icon="✅")
+        # Restart to apply
+        _send_and_wait(ser, b'AT+PWR\r\n', 1.5)
+        st.toast("Subscriptions updated! DTU is restarting...", icon="✅")
     else:
         st.toast("Failed to enter AT mode", icon="❌")
 
@@ -1188,11 +1340,19 @@ def handle_apply_publishing(pubs_list):
             _send_and_wait(ser, cmd.encode('utf-8'), 1.5)
             time.sleep(0.2)
 
-        # 2. Distribution (MQTTDIST)
-        dist_en = "1" if st.session_state.get("cell_enable_identifier", True) else "0"
+        # 2. Distribution (Both MQTTDIST and TASKDIST)
+        dist_en = "1" if st.session_state.get("cell_enable_identifier", False) else "0"
         dist_fmt = st.session_state.get("cell_identifier_format", "<%d>")
-        dist_cmd = f'AT+MQTTDIST="{dist_en}","{dist_fmt}"\r\n'
-        _send_and_wait(ser, dist_cmd.encode('utf-8'), 1.0)
+        
+        # AT+MQTTDIST controls identification for incoming MQTT -> Serial
+        dist_cmd_in = f'AT+MQTTDIST="{dist_en}","{dist_fmt}"\r\n'
+        _send_and_wait(ser, dist_cmd_in.encode('utf-8'), 1.0)
+        time.sleep(0.2)
+        
+        # AT+TASKDIST controls identification for outgoing Serial -> MQTT
+        # Note: Requires Task Mode (AT+TASKMD) to be TRANS or MODBUS
+        dist_cmd_out = f'AT+TASKDIST="{dist_en}","{dist_fmt}"\r\n'
+        _send_and_wait(ser, dist_cmd_out.encode('utf-8'), 1.0)
         time.sleep(0.2)
 
         # 3. Will Message (MQTTWILL)
@@ -1213,8 +1373,9 @@ def handle_apply_publishing(pubs_list):
         _send_and_wait(ser, con_cmd.encode('utf-8'), 1.0)
         time.sleep(0.2)
 
-        _send_and_wait(ser, b'ATO\r\n', 1.0)
-        st.toast("Publishing config updated!", icon="✅")
+        # Restart to apply
+        _send_and_wait(ser, b'AT+PWR\r\n', 1.5)
+        st.toast("Publishing config updated! DTU is restarting...", icon="✅")
     else:
         st.toast("Failed to enter AT mode", icon="❌")
 
